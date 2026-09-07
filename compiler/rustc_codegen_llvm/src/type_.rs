@@ -72,6 +72,33 @@ impl<'ll, CX: Borrow<SCx<'ll>>> GenericCx<'ll, CX> {
         unsafe { llvm::LLVMScalableVectorType(ty, count as c_uint) }
     }
 
+    pub(crate) fn type_riscv_vector_tuple(
+        &self,
+        field_min_lanes: u64,
+        field_scalar_bits: u64,
+        nf: u32,
+    ) -> &'ll Type {
+        let field_min_bits = field_min_lanes
+            .checked_mul(field_scalar_bits)
+            .expect("RISC-V vector tuple field size overflow");
+        assert_eq!(field_min_bits % 8, 0);
+        let byte_count = field_min_bits / 8;
+        let byte_vector = self.type_scalable_vector(self.type_i8(), byte_count);
+        let name = SmallCStr::new("riscv.vector.tuple");
+        let type_params = [byte_vector];
+        let int_params = [nf as c_uint];
+        unsafe {
+            llvm::LLVMTargetExtTypeInContext(
+                self.llcx(),
+                name.as_ptr(),
+                type_params.as_ptr(),
+                type_params.len() as c_uint,
+                int_params.as_ptr(),
+                int_params.len() as c_uint,
+            )
+        }
+    }
+
     pub(crate) fn add_func(&self, name: &str, ty: &'ll Type) -> &'ll Value {
         let name = SmallCStr::new(name);
         unsafe { llvm::LLVMAddFunction(self.llmod(), name.as_ptr(), ty) }

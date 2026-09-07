@@ -6,7 +6,7 @@ use rustc_middle::mir::{self, Location, traversal};
 use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt};
 use rustc_span::def_id::DefId;
 use rustc_span::{DUMMY_SP, Span, Symbol, sym};
-use rustc_target::callconv::{FnAbi, PassMode};
+use rustc_target::callconv::{FnAbi, PassMode, TargetSpecificPassMode};
 
 use crate::diagnostics;
 
@@ -38,6 +38,9 @@ fn passes_vectors_by_value(mode: &PassMode, repr: &BackendRepr) -> UsesVectorReg
         PassMode::Direct(..) | PassMode::Pair(..)
             if matches!(repr, BackendRepr::SimdScalableVector { .. }) =>
         {
+            UsesVectorRegisters::ScalableVector
+        }
+        PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {
             UsesVectorRegisters::ScalableVector
         }
         _ => UsesVectorRegisters::No,

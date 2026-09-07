@@ -2,8 +2,8 @@ use std::cmp;
 
 use libc::c_uint;
 use rustc_abi::{
-    ArmCall, BackendRepr, CanonAbi, Float, HasDataLayout, Integer, InterruptKind, Primitive, Reg,
-    RegKind, Size, X86Call,
+    ArmCall, BackendRepr, CanonAbi, Float, HasDataLayout, Integer, InterruptKind,
+    NumScalableVectors, Primitive, Reg, RegKind, Size, X86Call,
 };
 use rustc_codegen_ssa::MemFlags;
 use rustc_codegen_ssa::mir::operand::{OperandRef, OperandValue};
@@ -15,6 +15,7 @@ use rustc_middle::{bug, ty};
 use rustc_session::{Session, config};
 use rustc_target::callconv::{
     ArgAbi, ArgAttribute, ArgAttributes, ArgExtension, CastTarget, FnAbi, PassMode,
+    TargetSpecificPassMode,
 };
 use rustc_target::spec::{Arch, SanitizerSet};
 use smallvec::SmallVec;
@@ -212,6 +213,64 @@ impl LlvmType for CastTarget {
     }
 }
 
+fn riscv_vector_tuple_parts<'ll, 'tcx>(
+    cx: &CodegenCx<'ll, 'tcx>,
+    layout: rustc_middle::ty::layout::TyAndLayout<'tcx>,
+) -> (&'ll Type, &'ll Type, &'ll Type, u64) {
+    let BackendRepr::SimdScalableVector {
+        element,
+        count,
+        number_of_vectors: NumScalableVectors(nf @ 2..=8),
+    } = layout.backend_repr
+    else {
+        bug!("expected RISC-V scalable vector tuple layout, got {:?}", layout.backend_repr);
+    };
+    let field_llvm_ty =
+        cx.type_scalable_vector(layout.scalar_llvm_type_at(cx, element), count.as_u64());
+    let rust_tuple_ty = layout.immediate_llvm_type(cx);
+    let target_tuple_ty =
+        cx.type_riscv_vector_tuple(count.as_u64(), element.size(cx).bits(), u32::from(nf));
+    (rust_tuple_ty, field_llvm_ty, target_tuple_ty, u64::from(nf))
+}
+
+fn pack_riscv_vector_tuple<'ll, 'tcx>(
+    bx: &mut Builder<'_, 'll, 'tcx>,
+    layout: rustc_middle::ty::layout::TyAndLayout<'tcx>,
+    rust_tuple: &'ll Value,
+) -> &'ll Value {
+    let (_rust_tuple_ty, field_llvm_ty, target_tuple_ty, nf) =
+        riscv_vector_tuple_parts(bx.cx, layout);
+    let mut packed = bx.const_poison(target_tuple_ty);
+    for idx in 0..nf {
+        let field = bx.extract_value(rust_tuple, idx);
+        packed = bx.call_intrinsic(
+            "llvm.riscv.tuple.insert",
+            &[target_tuple_ty, field_llvm_ty],
+            &[packed, field, bx.const_i32(idx as i32)],
+        );
+    }
+    packed
+}
+
+fn unpack_riscv_vector_tuple<'ll, 'tcx>(
+    bx: &mut Builder<'_, 'll, 'tcx>,
+    layout: rustc_middle::ty::layout::TyAndLayout<'tcx>,
+    target_tuple: &'ll Value,
+) -> &'ll Value {
+    let (rust_tuple_ty, field_llvm_ty, target_tuple_ty, nf) =
+        riscv_vector_tuple_parts(bx.cx, layout);
+    let mut unpacked = bx.const_poison(rust_tuple_ty);
+    for idx in 0..nf {
+        let field = bx.call_intrinsic(
+            "llvm.riscv.tuple.extract",
+            &[field_llvm_ty, target_tuple_ty],
+            &[target_tuple, bx.const_i32(idx as i32)],
+        );
+        unpacked = bx.insert_value(unpacked, field, idx);
+    }
+    unpacked
+}
+
 trait ArgAbiExt<'ll, 'tcx> {
     fn store(
         &self,
@@ -240,8 +299,9 @@ impl<'ll, 'tcx> ArgAbiExt<'ll, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
     ) {
         match &self.mode {
             PassMode::Ignore => {}
-            PassMode::TargetSpecific(_) => {
-                bug!("target-specific argument ABI is not implemented")
+            PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {
+                let unpacked = unpack_riscv_vector_tuple(bx, self.layout, val);
+                OperandValue::Immediate(unpacked).store(bx, dst);
             }
             // Sized indirect arguments
             PassMode::Indirect { attrs, meta_attrs: None, on_stack: _ } => {
@@ -302,8 +362,9 @@ impl<'ll, 'tcx> ArgAbiExt<'ll, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
         };
         match self.mode {
             PassMode::Ignore => {}
-            PassMode::TargetSpecific(_) => {
-                bug!("target-specific argument ABI is not implemented")
+            PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {
+                let next_arg = next();
+                self.store(bx, next_arg, dst);
             }
             PassMode::Pair(..) => {
                 OperandValue::Pair(next(), next()).store(bx, dst);
@@ -337,6 +398,44 @@ impl<'ll, 'tcx> ArgAbiBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
         dst: PlaceRef<'tcx, &'ll Value>,
     ) {
         arg_abi.store(self, val, dst)
+    }
+
+    fn store_target_specific_fn_arg(
+        &mut self,
+        arg_abi: &ArgAbi<'tcx, Ty<'tcx>>,
+        idx: &mut usize,
+        dst: PlaceRef<'tcx, Self::Value>,
+    ) {
+        arg_abi.store_fn_arg(self, idx, dst)
+    }
+
+    fn store_target_specific_arg(
+        &mut self,
+        arg_abi: &ArgAbi<'tcx, Ty<'tcx>>,
+        val: Self::Value,
+        dst: PlaceRef<'tcx, Self::Value>,
+    ) {
+        arg_abi.store(self, val, dst)
+    }
+
+    fn make_target_specific_arg(
+        &mut self,
+        arg_abi: &ArgAbi<'tcx, Ty<'tcx>>,
+        op: OperandRef<'tcx, Self::Value>,
+    ) -> Vec<Self::Value> {
+        match arg_abi.mode {
+            PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {
+                let rust_tuple = if let OperandValue::Immediate(val) = op.val {
+                    val
+                } else if let OperandValue::Ref(place) = op.val {
+                    self.load(arg_abi.layout.immediate_llvm_type(self.cx), place.llval, place.align)
+                } else {
+                    bug!("RISC-V vector tuple ABI expects an immediate or by-ref aggregate")
+                };
+                vec![pack_riscv_vector_tuple(self, arg_abi.layout, rust_tuple)]
+            }
+            _ => bug!("unexpected non-target-specific ABI in make_target_specific_arg"),
+        }
     }
 }
 
@@ -373,7 +472,10 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
             PassMode::Ignore => cx.type_void(),
             PassMode::Direct(_) | PassMode::Pair(..) => self.ret.layout.immediate_llvm_type(cx),
             PassMode::Cast { cast, pad_i32_count: _ } => cast.llvm_type(cx),
-            PassMode::TargetSpecific(_) => bug!("target-specific return ABI is not implemented"),
+            PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {
+                let (_, _, target_tuple_ty, _) = riscv_vector_tuple_parts(cx, self.ret.layout);
+                target_tuple_ty
+            }
             PassMode::Indirect { .. } => {
                 llargument_tys.push(cx.type_ptr());
                 cx.type_void()
@@ -400,8 +502,9 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     llargument_tys.push(arg.layout.scalar_pair_element_llvm_type(cx, 1, true));
                     continue;
                 }
-                PassMode::TargetSpecific(_) => {
-                    bug!("target-specific argument ABI is not implemented")
+                PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {
+                    let (_, _, target_tuple_ty, _) = riscv_vector_tuple_parts(cx, arg.layout);
+                    target_tuple_ty
                 }
                 PassMode::Indirect { attrs: _, meta_attrs: Some(_), on_stack: _ } => {
                     // Construct the type of a (wide) pointer to `ty`, and pass its two fields.
@@ -504,7 +607,7 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     apply_range_attr(llvm::AttributePlace::ReturnValue, scalar);
                 }
             }
-            PassMode::TargetSpecific(_) => bug!("target-specific return ABI is not implemented"),
+            PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {}
             PassMode::Indirect { attrs, meta_attrs: _, on_stack } => {
                 assert!(!on_stack);
                 let i = apply(attrs);
@@ -532,8 +635,8 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
         for arg in self.args.iter() {
             match &arg.mode {
                 PassMode::Ignore => {}
-                PassMode::TargetSpecific(_) => {
-                    bug!("target-specific argument ABI is not implemented")
+                PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {
+                    apply(&ArgAttributes::new());
                 }
                 PassMode::Indirect { attrs, meta_attrs: None, on_stack: true } => {
                     let i = apply(attrs);
@@ -638,7 +741,7 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
             PassMode::Direct(attrs) => {
                 attrs.apply_attrs_to_callsite(llvm::AttributePlace::ReturnValue, bx.cx, callsite);
             }
-            PassMode::TargetSpecific(_) => bug!("target-specific return ABI is not implemented"),
+            PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {}
             PassMode::Indirect { attrs, meta_attrs: _, on_stack } => {
                 assert!(!on_stack);
                 let i = apply(bx.cx, attrs);
@@ -660,8 +763,8 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
         for arg in self.args.iter() {
             match &arg.mode {
                 PassMode::Ignore => {}
-                PassMode::TargetSpecific(_) => {
-                    bug!("target-specific argument ABI is not implemented")
+                PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple) => {
+                    apply(bx.cx, &ArgAttributes::new());
                 }
                 PassMode::Indirect { attrs, meta_attrs: None, on_stack: true } => {
                     let i = apply(bx.cx, attrs);

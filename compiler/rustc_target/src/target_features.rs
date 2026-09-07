@@ -1230,6 +1230,7 @@ impl Target {
     pub fn features_for_correct_scalable_vector_abi(&self) -> Option<&'static str> {
         match &self.arch {
             Arch::AArch64 | Arch::Arm64EC => Some("sve"),
+            Arch::RiscV32 | Arch::RiscV64 => Some("v"),
             // Other targets have no scalable vectors or they are unimplemented.
             _ => None,
         }

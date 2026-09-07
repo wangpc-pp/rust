@@ -968,6 +968,15 @@ unsafe extern "C" {
     pub(crate) safe fn LLVMPointerTypeInContext(C: &Context, AddressSpace: c_uint) -> &Type;
     pub(crate) fn LLVMVectorType(ElementType: &Type, ElementCount: c_uint) -> &Type;
     pub(crate) fn LLVMScalableVectorType(ElementType: &Type, ElementCount: c_uint) -> &Type;
+    pub(crate) fn LLVMTargetExtTypeInContext<'a>(
+        C: &'a Context,
+        Name: *const c_char,
+        TypeParams: *const &'a Type,
+        TypeParamCount: c_uint,
+        IntParams: *const c_uint,
+        IntParamCount: c_uint,
+    ) -> &'a Type;
+
     pub(crate) fn LLVMGetElementType(Ty: &Type) -> &Type;
     pub(crate) fn LLVMGetVectorSize(VectorTy: &Type) -> c_uint;
 

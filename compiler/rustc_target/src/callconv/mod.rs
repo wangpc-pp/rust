@@ -79,7 +79,9 @@ pub enum PassMode {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, StableHash)]
-pub enum TargetSpecificPassMode {}
+pub enum TargetSpecificPassMode {
+    RiscvVectorTuple,
+}
 
 impl PassMode {
     /// Checks if these two `PassMode` are equal enough to be considered "the same for all

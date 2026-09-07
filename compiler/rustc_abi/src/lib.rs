@@ -1851,6 +1851,61 @@ pub enum BackendRepr {
 }
 
 impl BackendRepr {
+    /// Classify a scalable vector according to the RISC-V vector calling-convention rules.
+    ///
+    /// RISC-V scalable vector types encode their LMUL in the minimum vector size: at
+    /// `vscale == 1`, one vector register contains 64 bits. Vector tuples additionally consume
+    /// `NF * max(LMUL, 1)` registers and may use at most eight registers.
+    pub fn riscv_vector_abi(self) -> RiscvVectorAbi {
+        let BackendRepr::SimdScalableVector { element, count, number_of_vectors } = self else {
+            return RiscvVectorAbi::NotScalable;
+        };
+
+        let nf = u64::from(number_of_vectors.0);
+        if element.is_bool() {
+            return if nf == 1 && matches!(count.as_u64(), 1 | 2 | 4 | 8 | 16 | 32 | 64) {
+                RiscvVectorAbi::MaskVector
+            } else {
+                RiscvVectorAbi::Unsupported
+            };
+        }
+
+        let element_bits = match element.primitive() {
+            Primitive::Int(integer, _)
+                if matches!(integer, Integer::I8 | Integer::I16 | Integer::I32 | Integer::I64) =>
+            {
+                integer.size().bits()
+            }
+            Primitive::Float(float @ (Float::F16 | Float::F32 | Float::F64)) => float.size().bits(),
+            Primitive::Int(..) | Primitive::Float(..) | Primitive::Pointer(..) => {
+                return RiscvVectorAbi::Unsupported;
+            }
+        };
+        let Some(vector_bits) = count.as_u64().checked_mul(element_bits) else {
+            return RiscvVectorAbi::Unsupported;
+        };
+
+        match nf {
+            1 if matches!(vector_bits, 8 | 16 | 32 | 64 | 128 | 256 | 512) => {
+                RiscvVectorAbi::DataVector
+            }
+            2..=8 => {
+                let registers_per_field = match vector_bits {
+                    8 | 16 | 32 | 64 => 1,
+                    128 => 2,
+                    256 => 4,
+                    _ => return RiscvVectorAbi::Unsupported,
+                };
+                if nf * registers_per_field <= 8 {
+                    RiscvVectorAbi::DataTuple
+                } else {
+                    RiscvVectorAbi::Unsupported
+                }
+            }
+            _ => RiscvVectorAbi::Unsupported,
+        }
+    }
+
     /// Returns `true` if the layout corresponds to an unsized type.
     #[inline]
     pub fn is_unsized(&self) -> bool {
@@ -1993,6 +2048,16 @@ impl BackendRepr {
             _ => self == other,
         }
     }
+}
+
+/// How a scalable vector is passed by value in the RISC-V C ABI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RiscvVectorAbi {
+    NotScalable,
+    DataVector,
+    MaskVector,
+    DataTuple,
+    Unsupported,
 }
 
 // NOTE: This struct is generic over the FieldIdx and VariantIdx for rust-analyzer usage.

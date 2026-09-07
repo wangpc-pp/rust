@@ -5,11 +5,13 @@
 // https://github.com/llvm/llvm-project/blob/8e780252a7284be45cf1ba224cabd884847e8e92/clang/lib/CodeGen/TargetInfo.cpp#L9311-L9773
 
 use rustc_abi::{
-    BackendRepr, FieldsShape, HasDataLayout, Primitive, Reg, RegKind, Size, TyAbiInterface,
-    TyAndLayout, Variants,
+    BackendRepr, FieldsShape, HasDataLayout, Primitive, Reg, RegKind, RiscvVectorAbi, Size,
+    TyAbiInterface, TyAndLayout, Variants,
 };
 
-use crate::callconv::{ArgAbi, ArgExtension, CastTarget, FnAbi, PassMode, Uniform};
+use crate::callconv::{
+    ArgAbi, ArgExtension, CastTarget, FnAbi, PassMode, TargetSpecificPassMode, Uniform,
+};
 use crate::spec::{HasTargetSpec, LlvmAbi};
 
 #[derive(Copy, Clone)]
@@ -47,6 +49,7 @@ fn should_use_fp_conv_helper<'a, Ty, C>(
 ) -> Result<(), CannotUseFpConv>
 where
     Ty: TyAbiInterface<'a, C> + Copy,
+    C: HasDataLayout,
 {
     match arg_layout.backend_repr {
         BackendRepr::Scalar(scalar) => match scalar.primitive() {
@@ -160,6 +163,7 @@ fn should_use_fp_conv<'a, Ty, C>(
 ) -> Option<FloatConv>
 where
     Ty: TyAbiInterface<'a, C> + Copy,
+    C: HasDataLayout,
 {
     let mut field1_kind = RegPassKind::Unknown;
     let mut field2_kind = RegPassKind::Unknown;
@@ -216,10 +220,27 @@ where
 fn classify_ret<'a, Ty, C>(cx: &C, arg: &mut ArgAbi<'a, Ty>, xlen: u64, flen: u64) -> bool
 where
     Ty: TyAbiInterface<'a, C> + Copy,
+    C: HasDataLayout,
 {
     if !arg.layout.is_sized() {
         // Not touching this...
         return false; // I guess? return value of this function is not documented
+    }
+    match arg.layout.backend_repr.riscv_vector_abi() {
+        RiscvVectorAbi::DataTuple => {
+            arg.mode = PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple);
+            return false;
+        }
+        RiscvVectorAbi::DataVector | RiscvVectorAbi::MaskVector => {
+            // Legal RVV values are passed/returned directly in vector registers.
+            return false;
+        }
+        RiscvVectorAbi::Unsupported => {
+            // This is rejected as a hard error during type checking. Do not silently
+            // classify it as an ordinary aggregate if error recovery reaches here.
+            return false;
+        }
+        RiscvVectorAbi::NotScalable => {}
     }
     if let Some(conv) = should_use_fp_conv(cx, &arg.layout, xlen, flen) {
         match conv {
@@ -290,11 +311,32 @@ fn classify_arg<'a, Ty, C>(
     avail_fprs: &mut u64,
 ) where
     Ty: TyAbiInterface<'a, C> + Copy,
+    C: HasDataLayout,
 {
     if !arg.layout.is_sized() {
         // FIXME: Update avail_gprs?
         // Not touching this...
         return;
+    }
+    match arg.layout.backend_repr.riscv_vector_abi() {
+        RiscvVectorAbi::DataTuple => {
+            if !is_vararg {
+                arg.mode = PassMode::TargetSpecific(TargetSpecificPassMode::RiscvVectorTuple);
+            }
+            // Scalable vectors are rejected as C variadic arguments during type checking.
+            return;
+        }
+        RiscvVectorAbi::DataVector | RiscvVectorAbi::MaskVector => {
+            // Legal RVV values are passed directly in vector registers. Scalable vectors are
+            // rejected as C variadic arguments during type checking, before ABI lowering.
+            return;
+        }
+        RiscvVectorAbi::Unsupported => {
+            // This is rejected as a hard error during type checking. Do not silently
+            // classify it as an ordinary aggregate if error recovery reaches here.
+            return;
+        }
+        RiscvVectorAbi::NotScalable => {}
     }
     if arg.layout.pass_indirectly_in_non_rustic_abis(cx) {
         arg.make_indirect();
