@@ -1,0 +1,11 @@
+[package]
+name = "str_contains_riscv"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "lib.rs"
+
+[[bin]]
+name = "str_contains_riscv_runtime"
+path = "main.rs"

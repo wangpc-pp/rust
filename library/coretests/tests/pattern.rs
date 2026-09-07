@@ -190,6 +190,78 @@ fn test_simple_search() {
     );
 }
 
+#[test]
+fn test_str_contains_short_needles() {
+    fn reference(haystack: &str, needle: &str) -> bool {
+        if needle.is_empty() {
+            return true;
+        }
+        haystack.as_bytes().windows(needle.len()).any(|window| window == needle.as_bytes())
+    }
+
+    fn check(haystack: &str, needle: &str) {
+        assert_eq!(
+            haystack.contains(needle),
+            reference(haystack, needle),
+            "haystack={haystack:?}, needle={needle:?}"
+        );
+    }
+
+    const SOURCE: &str = "0123456789abcdefghijklmnopqrstuvw";
+    const FILL: &str = concat!(
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    );
+
+    // Cover empty/single-byte needles, the complete SIMD range, and the first length which falls
+    // back to the two-way searcher. For each needle, put a match at every offset in haystacks just
+    // below and at the SIMD-load boundary, as well as in a multi-block haystack.
+    for needle_len in 0usize..=33 {
+        let needle = &SOURCE[..needle_len];
+        let boundary = needle_len.saturating_add(15);
+        for haystack_len in [
+            needle_len.saturating_sub(1),
+            needle_len,
+            boundary.saturating_sub(1),
+            boundary,
+            boundary + 1,
+            needle_len + 64,
+        ] {
+            check(&FILL[..haystack_len], needle);
+
+            if needle_len <= haystack_len {
+                for offset in 0..=haystack_len - needle_len {
+                    let mut haystack = FILL[..haystack_len].to_owned();
+                    haystack.replace_range(offset..offset + needle_len, needle);
+                    check(&haystack, needle);
+
+                    if needle_len != 0 {
+                        haystack.replace_range(offset..offset + 1, "!");
+                        check(&haystack, needle);
+                    }
+                }
+            }
+        }
+    }
+
+    // Repeated probe bytes make the vector prefilter deliberately fall back, while a repeated
+    // first byte with a distinct trailing byte creates many false-positive probe candidates.
+    for (haystack, needle) in [
+        ("zzzzzaaaaazzzzz", "aaaa"),
+        ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab", "aaaab"),
+        ("ababababababababababababababababababababababababababac", "ababac"),
+    ] {
+        check(haystack, needle);
+    }
+
+    // The implementation searches bytes, but all public results must agree with UTF-8 string
+    // semantics even when a probe byte also occurs inside other code points.
+    let unicode = "é中🦀é中🦀--needle--🦀中é";
+    for needle in ["", "é", "中🦀", "🦀--needle", "needle--🦀", "中éx"] {
+        check(unicode, needle);
+    }
+}
+
 // Á, 각, ก, 😀 all end in 0x81
 // 🁀, ᘀ do not end in 0x81 but contain the byte
 // ꁁ has 0x81 as its second and third bytes.

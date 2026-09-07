@@ -1000,7 +1000,11 @@ impl<'b> Pattern for &'b str {
                 #[cfg(any(
                     all(target_arch = "x86_64", target_feature = "sse2"),
                     all(target_arch = "loongarch64", target_feature = "lsx"),
-                    all(target_arch = "aarch64", target_feature = "neon")
+                    all(target_arch = "aarch64", target_feature = "neon"),
+                    all(
+                        any(target_arch = "riscv32", target_arch = "riscv64"),
+                        target_feature = "v"
+                    )
                 ))]
                 if self.len() <= 32 {
                     if let Some(result) = simd_contains(self, haystack) {
@@ -1888,7 +1892,8 @@ impl TwoWayStrategy for RejectAndMatch {
 #[cfg(any(
     all(target_arch = "x86_64", target_feature = "sse2"),
     all(target_arch = "loongarch64", target_feature = "lsx"),
-    all(target_arch = "aarch64", target_feature = "neon")
+    all(target_arch = "aarch64", target_feature = "neon"),
+    all(any(target_arch = "riscv32", target_arch = "riscv64"), target_feature = "v")
 ))]
 #[inline]
 fn simd_contains(needle: &str, haystack: &str) -> Option<bool> {
@@ -2022,7 +2027,8 @@ fn simd_contains(needle: &str, haystack: &str) -> Option<bool> {
 #[cfg(any(
     all(target_arch = "x86_64", target_feature = "sse2"),
     all(target_arch = "loongarch64", target_feature = "lsx"),
-    all(target_arch = "aarch64", target_feature = "neon")
+    all(target_arch = "aarch64", target_feature = "neon"),
+    all(any(target_arch = "riscv32", target_arch = "riscv64"), target_feature = "v")
 ))]
 #[inline]
 unsafe fn small_slice_eq(x: &[u8], y: &[u8]) -> bool {
