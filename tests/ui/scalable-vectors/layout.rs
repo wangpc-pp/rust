@@ -26,3 +26,17 @@ struct ScalableBool(bool); //~ ERROR: size: Size(16 bytes)
 #[rustc_dump_layout(size)]
 #[rustc_scalable_vector]
 struct ScalableTuple(ScalableU8, ScalableU8, ScalableU8); //~ ERROR: size: Size(48 bytes)
+
+#[rustc_dump_layout(size)]
+#[rustc_scalable_vector]
+struct ScalableTuple8(
+    //~^ ERROR: size: Size(128 bytes)
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+);

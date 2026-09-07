@@ -28,5 +28,11 @@ error: size: Size(48 bytes)
 LL | struct ScalableTuple(ScalableU8, ScalableU8, ScalableU8);
    | ^^^^^^^^^^^^^^^^^^^^
 
-error: aborting due to 5 previous errors
+error: size: Size(128 bytes)
+  --> $DIR/layout.rs:32:1
+   |
+LL | struct ScalableTuple8(
+   | ^^^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 6 previous errors
 

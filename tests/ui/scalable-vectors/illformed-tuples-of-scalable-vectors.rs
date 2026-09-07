@@ -13,6 +13,20 @@ struct ValidI32(i32);
 struct ValidTuple(ValidI32, ValidI32, ValidI32);
 
 #[rustc_scalable_vector]
+struct TooManyFields(
+    //~^ ERROR: scalable vector tuples can have at most eight fields
+    ValidI32,
+    ValidI32,
+    ValidI32,
+    ValidI32,
+    ValidI32,
+    ValidI32,
+    ValidI32,
+    ValidI32,
+    ValidI32,
+);
+
+#[rustc_scalable_vector]
 struct Struct { x: ValidI64, y: ValidI64 }
 //~^ ERROR: scalable vectors must be tuple structs
 

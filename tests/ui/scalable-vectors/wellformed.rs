@@ -47,3 +47,15 @@ struct ScalableBool(bool);
 
 #[rustc_scalable_vector]
 struct ScalableTuple(ScalableU8, ScalableU8, ScalableU8);
+
+#[rustc_scalable_vector]
+struct ScalableTuple8(
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+    ScalableU8,
+);
