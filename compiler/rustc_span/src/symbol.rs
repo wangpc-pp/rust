@@ -1722,6 +1722,8 @@ symbols! {
         riscv64,
         riscv_target_feature,
         riscv_vreinterpret,
+        riscv_vleff,
+        riscv_vleff_mask,
         rlib,
         ropi,
         ropi_rwpi: "ropi-rwpi",

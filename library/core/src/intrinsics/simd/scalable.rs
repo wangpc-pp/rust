@@ -72,3 +72,31 @@ pub unsafe fn sve_tuple_set<SVecTup, SVec, const IDX: i32>(tuple: SVecTup, x: SV
 #[rustc_intrinsic]
 #[rustc_nounwind]
 pub unsafe fn riscv_vreinterpret<Src, Dst>(src: Src) -> Dst;
+
+/// Perform a RISC-V unit-stride fault-only-first vector load.
+///
+/// `SVec` must be a scalable vector (`#[rustc_scalable_vector(N)]`) whose element type is `Elem`.
+/// The number of elements successfully loaded is written to `new_vl`.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vleff<SVec, Elem>(
+    passthru: SVec,
+    ptr: *const Elem,
+    new_vl: *mut usize,
+    vl: usize,
+) -> SVec;
+
+/// Perform a masked RISC-V unit-stride fault-only-first vector load.
+///
+/// `SVec` and `Mask` must be scalable vectors (`#[rustc_scalable_vector(N)]`) with the same
+/// number of elements. `SVec`'s element type must be `Elem`. The number of elements successfully
+/// loaded is written to `new_vl`.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vleff_mask<SVec, Elem, Mask, const POLICY: usize>(
+    passthru: SVec,
+    ptr: *const Elem,
+    mask: Mask,
+    new_vl: *mut usize,
+    vl: usize,
+) -> SVec;

@@ -767,6 +767,29 @@ pub(crate) fn check_intrinsic_type(
         sym::sve_tuple_get => (2, 1, vec![param(0)], param(1)),
         sym::sve_tuple_set => (2, 1, vec![param(0), param(1)], param(0)),
         sym::riscv_vreinterpret => (2, 0, vec![param(0)], param(1)),
+        sym::riscv_vleff => (
+            2,
+            0,
+            vec![
+                param(0),
+                Ty::new_imm_ptr(tcx, param(1)),
+                Ty::new_mut_ptr(tcx, tcx.types.usize),
+                tcx.types.usize,
+            ],
+            param(0),
+        ),
+        sym::riscv_vleff_mask => (
+            3,
+            1,
+            vec![
+                param(0),
+                Ty::new_imm_ptr(tcx, param(1)),
+                param(2),
+                Ty::new_mut_ptr(tcx, tcx.types.usize),
+                tcx.types.usize,
+            ],
+            param(0),
+        ),
 
         sym::atomic_cxchg | sym::atomic_cxchgweak => (
             1,

@@ -895,6 +895,71 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                 )
             }
 
+            sym::riscv_vleff | sym::riscv_vleff_mask => {
+                if !matches!(tcx.sess.target.arch, Arch::RiscV32 | Arch::RiscV64) {
+                    tcx.dcx().emit_fatal(IntrinsicWrongArch {
+                        name: name.as_str(),
+                        target_arch: tcx.sess.target.arch.desc(),
+                        span,
+                    });
+                }
+
+                let vec_ty = fn_args.type_at(0);
+                let elem_ty = fn_args.type_at(1);
+                let BackendRepr::SimdScalableVector {
+                    number_of_vectors: NumScalableVectors(1),
+                    ..
+                } = self.layout_of(vec_ty).backend_repr
+                else {
+                    span_bug!(span, "`{name}` requires a scalable vector type");
+                };
+                let (_, vec_elem_ty, _) =
+                    vec_ty.scalable_vector_parts(tcx).expect("scalable vector layout mismatch");
+                assert_eq!(vec_elem_ty, elem_ty);
+
+                let is_masked = name == sym::riscv_vleff_mask;
+                if is_masked {
+                    let mask_ty = fn_args.type_at(2);
+                    let (vec_count, _, _) =
+                        vec_ty.scalable_vector_parts(tcx).expect("scalable vector layout mismatch");
+                    let (mask_count, mask_elem_ty, mask_num_vecs) = mask_ty
+                        .scalable_vector_parts(tcx)
+                        .expect("`riscv_vleff_mask` requires a scalable mask type");
+                    assert_eq!(mask_count, vec_count);
+                    assert_eq!(mask_elem_ty, tcx.types.bool);
+                    assert_eq!(mask_num_vecs, NumScalableVectors(1));
+                }
+
+                let llvm_vec_ty = args[0].layout.immediate_llvm_type(self.cx);
+                let llvm_xlen_ty = self.type_isize();
+                let llvm_ptr_ty = self.type_ptr();
+                let call = if is_masked {
+                    let policy = fn_args.const_at(3).to_leaf().to_target_usize(tcx);
+                    self.call_intrinsic(
+                        "llvm.riscv.vleff.mask",
+                        &[llvm_vec_ty, llvm_xlen_ty, llvm_ptr_ty],
+                        &[
+                            args[0].immediate(),
+                            args[1].immediate(),
+                            args[2].immediate(),
+                            args[4].immediate(),
+                            self.const_usize(policy),
+                        ],
+                    )
+                } else {
+                    self.call_intrinsic(
+                        "llvm.riscv.vleff",
+                        &[llvm_vec_ty, llvm_xlen_ty, llvm_ptr_ty],
+                        &[args[0].immediate(), args[1].immediate(), args[3].immediate()],
+                    )
+                };
+                let loaded = self.extract_value(call, 0);
+                let new_vl = self.extract_value(call, 1);
+                let new_vl_ptr = args[if is_masked { 3 } else { 2 }].immediate();
+                self.store(new_vl, new_vl_ptr, self.align_of(tcx.types.usize));
+                loaded
+            }
+
             _ if name.as_str().starts_with("simd_") => {
                 // Unpack non-power-of-2 #[repr(packed, simd)] arguments.
                 // This gives them the expected layout of a regular #[repr(simd)] vector.
