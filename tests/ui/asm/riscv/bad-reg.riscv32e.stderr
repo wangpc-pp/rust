@@ -34,30 +34,6 @@ error: invalid register `zero`: the zero register cannot be used as an operand f
 LL |         asm!("", out("zero") _);
    |                  ^^^^^^^^^^^^^
 
-error: register class `vreg` can only be used as a clobber, not as an input or output
-  --> $DIR/bad-reg.rs:94:18
-   |
-LL |         asm!("", in("v0") x);
-   |                  ^^^^^^^^^^
-
-error: register class `vreg` can only be used as a clobber, not as an input or output
-  --> $DIR/bad-reg.rs:97:18
-   |
-LL |         asm!("", out("v0") x);
-   |                  ^^^^^^^^^^^
-
-error: register class `vreg` can only be used as a clobber, not as an input or output
-  --> $DIR/bad-reg.rs:100:26
-   |
-LL |         asm!("/* {} */", in(vreg) x);
-   |                          ^^^^^^^^^^
-
-error: register class `vreg` can only be used as a clobber, not as an input or output
-  --> $DIR/bad-reg.rs:103:26
-   |
-LL |         asm!("/* {} */", out(vreg) _);
-   |                          ^^^^^^^^^^^
-
 error: cannot use register `x16`: register can't be used with the `e` target feature
   --> $DIR/bad-reg.rs:46:18
    |
@@ -178,29 +154,29 @@ error: register class `freg` requires at least one of the following target featu
 LL |         asm!("/* {} */", out(freg) d);
    |                          ^^^^^^^^^^^
 
-error: type `i32` cannot be used with this register class
-  --> $DIR/bad-reg.rs:94:27
+error: register class `vreg` requires the `v` target feature
+  --> $DIR/bad-reg.rs:93:18
    |
 LL |         asm!("", in("v0") x);
-   |                           ^
-   |
-   = note: register class `vreg` supports these types: 
+   |                  ^^^^^^^^^^
 
-error: type `i32` cannot be used with this register class
-  --> $DIR/bad-reg.rs:97:28
+error: register class `vreg` requires the `v` target feature
+  --> $DIR/bad-reg.rs:95:18
    |
 LL |         asm!("", out("v0") x);
-   |                            ^
-   |
-   = note: register class `vreg` supports these types: 
+   |                  ^^^^^^^^^^^
 
-error: type `i32` cannot be used with this register class
-  --> $DIR/bad-reg.rs:100:35
+error: register class `vreg` requires the `v` target feature
+  --> $DIR/bad-reg.rs:97:26
    |
 LL |         asm!("/* {} */", in(vreg) x);
-   |                                   ^
-   |
-   = note: register class `vreg` supports these types: 
+   |                          ^^^^^^^^^^
 
-error: aborting due to 33 previous errors
+error: register class `vreg` requires the `v` target feature
+  --> $DIR/bad-reg.rs:99:26
+   |
+LL |         asm!("/* {} */", out(vreg) _);
+   |                          ^^^^^^^^^^^
+
+error: aborting due to 30 previous errors
 

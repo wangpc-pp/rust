@@ -38,6 +38,7 @@ impl RiscVInlineAsmRegClass {
     pub fn supported_types(
         self,
         arch: InlineAsmArch,
+        allow_experimental_reg: bool,
     ) -> &'static [(InlineAsmType, Option<Symbol>)] {
         match self {
             Self::reg => {
@@ -49,7 +50,29 @@ impl RiscVInlineAsmRegClass {
             }
             // FIXME(f128): Add `q: F128;` once LLVM support the `Q` extension.
             Self::freg => types! { f: F16, F32; d: F64; },
-            Self::vreg => &[],
+            Self::vreg => {
+                if allow_experimental_reg {
+                    types! {
+                        v:
+                            RiscVVecI8(1), RiscVVecI8(2), RiscVVecI8(4), RiscVVecI8(8),
+                            RiscVVecI8(16), RiscVVecI8(32), RiscVVecI8(64),
+                            RiscVVecI16(1), RiscVVecI16(2), RiscVVecI16(4), RiscVVecI16(8),
+                            RiscVVecI16(16), RiscVVecI16(32),
+                            RiscVVecI32(1), RiscVVecI32(2), RiscVVecI32(4), RiscVVecI32(8),
+                            RiscVVecI32(16),
+                            RiscVVecI64(1), RiscVVecI64(2), RiscVVecI64(4), RiscVVecI64(8),
+                            RiscVVecF16(1), RiscVVecF16(2), RiscVVecF16(4), RiscVVecF16(8),
+                            RiscVVecF16(16), RiscVVecF16(32),
+                            RiscVVecF32(1), RiscVVecF32(2), RiscVVecF32(4), RiscVVecF32(8),
+                            RiscVVecF32(16),
+                            RiscVVecF64(1), RiscVVecF64(2), RiscVVecF64(4), RiscVVecF64(8),
+                            RiscVVecBool(1), RiscVVecBool(2), RiscVVecBool(4), RiscVVecBool(8),
+                            RiscVVecBool(16), RiscVVecBool(32), RiscVVecBool(64);
+                    }
+                } else {
+                    &[]
+                }
+            }
         }
     }
 }

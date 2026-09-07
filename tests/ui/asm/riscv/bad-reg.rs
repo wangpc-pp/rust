@@ -18,7 +18,7 @@
 // usage in the asm! API (in, out, inout, etc.).
 
 #![crate_type = "lib"]
-#![feature(no_core)]
+#![feature(asm_experimental_reg, no_core)]
 #![no_core]
 
 extern crate minicore;
@@ -88,19 +88,15 @@ fn f() {
         //[riscv32i,riscv32e,riscv64imac]~^ ERROR register class `freg` requires at least one of the following target features: d, f
         //[riscv32imafc]~^^ ERROR `d` target feature is not enabled
 
-        // Clobber-only registers
         // vreg
         asm!("", out("v0") _); // ok
         asm!("", in("v0") x);
-        //~^ ERROR can only be used as a clobber
-        //~| ERROR type `i32` cannot be used with this register class
+        //~^ ERROR register class `vreg` requires the `v` target feature
         asm!("", out("v0") x);
-        //~^ ERROR can only be used as a clobber
-        //~| ERROR type `i32` cannot be used with this register class
+        //~^ ERROR register class `vreg` requires the `v` target feature
         asm!("/* {} */", in(vreg) x);
-        //~^ ERROR can only be used as a clobber
-        //~| ERROR type `i32` cannot be used with this register class
+        //~^ ERROR register class `vreg` requires the `v` target feature
         asm!("/* {} */", out(vreg) _);
-        //~^ ERROR can only be used as a clobber
+        //~^ ERROR register class `vreg` requires the `v` target feature
     }
 }

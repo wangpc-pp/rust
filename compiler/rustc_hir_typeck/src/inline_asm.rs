@@ -160,8 +160,45 @@ impl<'a, 'tcx> InlineAsmCtxt<'a, 'tcx> {
                 }
             }
             ty::Adt(adt, _args) if adt.repr().scalable() => {
-                let (_element_count, elem_ty, _number_of_vectors) =
+                let (element_count, elem_ty, number_of_vectors) =
                     ty.scalable_vector_parts(self.tcx()).unwrap();
+
+                if matches!(
+                    self.tcx().sess.asm_arch,
+                    Some(
+                        rustc_target::asm::InlineAsmArch::RiscV32
+                            | rustc_target::asm::InlineAsmArch::RiscV64
+                    )
+                ) {
+                    if number_of_vectors.0 != 1 {
+                        return Err(NonAsmTypeReason::Invalid(ty));
+                    }
+
+                    let n = u64::from(element_count);
+                    return match elem_ty.kind() {
+                        ty::Int(IntTy::I8) | ty::Uint(UintTy::U8) => {
+                            Ok(InlineAsmType::RiscVVecI8(n))
+                        }
+                        ty::Int(IntTy::I16) | ty::Uint(UintTy::U16) => {
+                            Ok(InlineAsmType::RiscVVecI16(n))
+                        }
+                        ty::Int(IntTy::I32) | ty::Uint(UintTy::U32) => {
+                            Ok(InlineAsmType::RiscVVecI32(n))
+                        }
+                        ty::Int(IntTy::I64) | ty::Uint(UintTy::U64) => {
+                            Ok(InlineAsmType::RiscVVecI64(n))
+                        }
+                        ty::Float(FloatTy::F16) => Ok(InlineAsmType::RiscVVecF16(n)),
+                        ty::Float(FloatTy::F32) => Ok(InlineAsmType::RiscVVecF32(n)),
+                        ty::Float(FloatTy::F64) => Ok(InlineAsmType::RiscVVecF64(n)),
+                        ty::Bool => Ok(InlineAsmType::RiscVVecBool(n)),
+                        _ => {
+                            let fields = &adt.non_enum_variant().fields;
+                            let field = &fields[FieldIdx::ZERO];
+                            Err(NonAsmTypeReason::InvalidElement(field.did, ty))
+                        }
+                    };
+                }
 
                 match elem_ty.kind() {
                     ty::Int(IntTy::I8) | ty::Uint(UintTy::U8) => Ok(InlineAsmType::SveVecI8),

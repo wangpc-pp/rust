@@ -1,0 +1,33 @@
+error: register class `vreg` requires the `v` target feature
+  --> $DIR/type-check-rvv.rs:90:34
+   |
+LL |         asm!("vmv.v.v {0}, {0}", in(vreg) vf2);
+   |                                  ^^^^^^^^^^^^
+
+error: register class `vreg` requires the `v` target feature
+  --> $DIR/type-check-rvv.rs:92:40
+   |
+LL |         asm!("vmand.mm {0}, {0}, {0}", in(vreg) vm);
+   |                                        ^^^^^^^^^^^
+
+error: register class `vreg` requires the `v` target feature
+  --> $DIR/type-check-rvv.rs:94:32
+   |
+LL |         asm!("vmv.v.v v0, v0", in("v0") vf2);
+   |                                ^^^^^^^^^^^^
+
+error: register class `vreg` requires the `v` target feature
+  --> $DIR/type-check-rvv.rs:98:29
+   |
+LL |         asm!("vmset.m {0}", lateout(vreg) late);
+   |                             ^^^^^^^^^^^^^^^^^^
+
+error: cannot use value of type `vint16m1x2_t` for inline assembly
+  --> $DIR/type-check-rvv.rs:106:36
+   |
+LL |         asm!("/* {0} */", in(vreg) tuple);
+   |                                    ^^^^^
+   |
+   = note: only integers, floats, SIMD vectors, scalable vectors, pointers and function pointers can be used as arguments for inline assembly
+
+error: aborting due to 5 previous errors

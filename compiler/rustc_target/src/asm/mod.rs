@@ -650,7 +650,7 @@ impl InlineAsmRegClass {
             Self::Arm(r) => r.supported_types(arch).into(),
             Self::AArch64(r) => r.supported_types(arch, allow_experimental_reg).into(),
             Self::Amdgpu(r) => r.supported_types(arch).into(),
-            Self::RiscV(r) => r.supported_types(arch).into(),
+            Self::RiscV(r) => r.supported_types(arch, allow_experimental_reg).into(),
             Self::Nvptx(r) => r.supported_types(arch).into(),
             Self::PowerPC(r) => r.supported_types(arch).into(),
             Self::Hexagon(r) => r.supported_types(arch).into(),
@@ -805,6 +805,14 @@ pub enum InlineAsmType {
     SveVecF64,
     SveVecF128,
     SveVecBool,
+    RiscVVecI8(u64),
+    RiscVVecI16(u64),
+    RiscVVecI32(u64),
+    RiscVVecI64(u64),
+    RiscVVecF16(u64),
+    RiscVVecF32(u64),
+    RiscVVecF64(u64),
+    RiscVVecBool(u64),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -848,7 +856,15 @@ impl InlineAsmType {
             | Self::SveVecF32
             | Self::SveVecF64
             | Self::SveVecF128
-            | Self::SveVecBool => InlineAsmSize::Scalable,
+            | Self::SveVecBool
+            | Self::RiscVVecI8(_)
+            | Self::RiscVVecI16(_)
+            | Self::RiscVVecI32(_)
+            | Self::RiscVVecI64(_)
+            | Self::RiscVVecF16(_)
+            | Self::RiscVVecF32(_)
+            | Self::RiscVVecF64(_)
+            | Self::RiscVVecBool(_) => InlineAsmSize::Scalable,
         }
     }
 }
@@ -884,6 +900,14 @@ impl fmt::Display for InlineAsmType {
             Self::SveVecF64 => f.write_str("svfloat64_t"),
             Self::SveVecF128 => f.write_str("svfloat128_t"),
             Self::SveVecBool => f.write_str("svbool_t"),
+            Self::RiscVVecI8(n) => write!(f, "vscale x {n} x i8"),
+            Self::RiscVVecI16(n) => write!(f, "vscale x {n} x i16"),
+            Self::RiscVVecI32(n) => write!(f, "vscale x {n} x i32"),
+            Self::RiscVVecI64(n) => write!(f, "vscale x {n} x i64"),
+            Self::RiscVVecF16(n) => write!(f, "vscale x {n} x f16"),
+            Self::RiscVVecF32(n) => write!(f, "vscale x {n} x f32"),
+            Self::RiscVVecF64(n) => write!(f, "vscale x {n} x f64"),
+            Self::RiscVVecBool(n) => write!(f, "vscale x {n} x i1"),
         }
     }
 }
