@@ -1,4 +1,4 @@
-// ignore-tidy-filelength
+// ignore-tidy-file-filelength
 
 use std::cmp::Ordering;
 use std::ffi::c_uint;
@@ -1487,7 +1487,12 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
         } else {
             let sym = tcx.symbol_name(instance).name;
 
-            let llfn = if let Some(llfn) = self.get_declared_value(sym) {
+            let riscv_bf16 = llvm::Intrinsic::lookup(sym.as_bytes())
+                .is_some_and(|intrinsic| intrinsic.is_overloaded())
+                && is_riscv_bf16_intrinsic_name(sym);
+            let llfn = if riscv_bf16 {
+                intrinsic_fn(self, sym, llreturn_ty, llargument_tys, instance)
+            } else if let Some(llfn) = self.get_declared_value(sym) {
                 llfn
             } else {
                 intrinsic_fn(self, sym, llreturn_ty, llargument_tys, instance)
@@ -1636,6 +1641,87 @@ fn llvm_arch_for(rust_arch: &Arch) -> Option<&'static str> {
     })
 }
 
+fn is_riscv_bf16_intrinsic_name(name: &str) -> bool {
+    name.starts_with("llvm.riscv.")
+        && name.split('.').any(|component| {
+            component == "bf16"
+                || component
+                    .strip_prefix("nxv")
+                    .and_then(|component| component.strip_suffix("bf16"))
+                    .is_some_and(|lanes| {
+                        !lanes.is_empty() && lanes.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+        })
+}
+
+fn riscv_bf16_carrier_type<'ll>(bx: &Builder<'_, 'll, '_>, ty: &'ll Type) -> Option<&'ll Type> {
+    match bx.type_kind(ty) {
+        TypeKind::Integer if ty == bx.type_i16() => Some(bx.type_bf16()),
+        TypeKind::ScalableVector if unsafe { llvm::LLVMGetElementType(ty) } == bx.type_i16() => {
+            Some(bx.type_scalable_vector(bx.type_bf16(), bx.vector_length(ty) as u64))
+        }
+        _ => None,
+    }
+}
+
+fn riscv_bf16_intrinsic_signature<'ll>(
+    bx: &Builder<'_, 'll, '_>,
+    intrinsic: llvm::Intrinsic,
+    name: &str,
+    rust_return_ty: &'ll Type,
+    rust_argument_tys: &[&'ll Type],
+) -> Option<(&'ll Type, Vec<&'ll Type>)> {
+    const MAX_RISCV_BF16_CARRIER_SLOTS: usize = 12;
+
+    #[derive(Clone, Copy)]
+    enum CarrierSlot<'ll> {
+        Return(&'ll Type),
+        Argument(usize, &'ll Type),
+    }
+
+    let mut carrier_slots = Vec::new();
+    if let Some(ty) = riscv_bf16_carrier_type(bx, rust_return_ty) {
+        carrier_slots.push(CarrierSlot::Return(ty));
+    }
+    for (index, ty) in rust_argument_tys.iter().copied().enumerate() {
+        if let Some(ty) = riscv_bf16_carrier_type(bx, ty) {
+            carrier_slots.push(CarrierSlot::Argument(index, ty));
+        }
+    }
+    if carrier_slots.len() > MAX_RISCV_BF16_CARRIER_SLOTS {
+        return None;
+    }
+
+    let candidate_count = 1usize << carrier_slots.len();
+    let mut matched = None;
+    for candidate in 0..candidate_count {
+        let mut return_ty = rust_return_ty;
+        let mut argument_tys = rust_argument_tys.to_vec();
+        for (bit, slot) in carrier_slots.iter().copied().enumerate() {
+            if candidate & (1 << bit) == 0 {
+                continue;
+            }
+            match slot {
+                CarrierSlot::Return(ty) => return_ty = ty,
+                CarrierSlot::Argument(index, ty) => argument_tys[index] = ty,
+            }
+        }
+
+        if !intrinsic.signature_matches_name(bx.llmod, name, return_ty, &argument_tys) {
+            continue;
+        }
+
+        if let Some((matched_return_ty, matched_argument_tys)) = &matched {
+            if *matched_return_ty != return_ty || *matched_argument_tys != argument_tys {
+                return None;
+            }
+        } else {
+            matched = Some((return_ty, argument_tys));
+        }
+    }
+    matched
+}
+
 fn can_autocast<'ll>(cx: &CodegenCx<'ll, '_>, rust_ty: &'ll Type, llvm_ty: &'ll Type) -> bool {
     if rust_ty == llvm_ty {
         return true;
@@ -1671,6 +1757,13 @@ fn can_autocast<'ll>(cx: &CodegenCx<'ll, '_>, rust_ty: &'ll Type, llvm_ty: &'ll 
             } else {
                 false
             }
+        }
+        TypeKind::ScalableVector if cx.type_kind(rust_ty) == TypeKind::ScalableVector => {
+            let llvm_element_ty = unsafe { llvm::LLVMGetElementType(llvm_ty) };
+            let rust_element_ty = unsafe { llvm::LLVMGetElementType(rust_ty) };
+            cx.vector_length(rust_ty) == cx.vector_length(llvm_ty)
+                && llvm_element_ty == cx.type_bf16()
+                && rust_element_ty == cx.type_i16()
         }
         TypeKind::BFloat => rust_ty == cx.type_i16(),
         TypeKind::X86_AMX if cx.type_kind(rust_ty) == TypeKind::Vector => {
@@ -1800,11 +1893,39 @@ fn intrinsic_fn<'ll, 'tcx>(
         }
     }
 
-    if let Some(intrinsic) = intrinsic
-        && !intrinsic.is_overloaded()
+    let riscv_bf16_signature = intrinsic
+        .filter(|intrinsic| intrinsic.is_overloaded())
+        .filter(|_| is_riscv_bf16_intrinsic_name(name))
+        .and_then(|intrinsic| {
+            riscv_bf16_intrinsic_signature(bx, intrinsic, name, rust_return_ty, &rust_argument_tys)
+        });
+    if intrinsic.is_some_and(|intrinsic| intrinsic.is_overloaded())
+        && is_riscv_bf16_intrinsic_name(name)
+        && riscv_bf16_signature.is_none()
     {
-        // FIXME: also do this for overloaded intrinsics
-        let llfn = intrinsic.get_declaration(bx.llmod, &[]);
+        tcx.dcx().emit_fatal(UnknownIntrinsic { name, span: tcx.def_span(instance.def_id()) });
+    }
+
+    if let Some(intrinsic) = intrinsic
+        && (!intrinsic.is_overloaded() || riscv_bf16_signature.is_some())
+    {
+        let llfn = if let Some((return_ty, argument_tys)) = riscv_bf16_signature {
+            let llfn = intrinsic
+                .get_declaration_for_signature(bx.llmod, return_ty, &argument_tys)
+                .unwrap_or_else(|| {
+                    tcx.dcx().emit_fatal(UnknownIntrinsic {
+                        name,
+                        span: tcx.def_span(instance.def_id()),
+                    })
+                });
+            if llvm::get_value_name(llfn) != name.as_bytes() {
+                tcx.dcx()
+                    .emit_fatal(UnknownIntrinsic { name, span: tcx.def_span(instance.def_id()) });
+            }
+            llfn
+        } else {
+            intrinsic.get_declaration(bx.llmod, &[])
+        };
         let llvm_fn_ty = bx.get_type_of_global(llfn);
 
         let llvm_return_ty = bx.get_return_type(llvm_fn_ty);

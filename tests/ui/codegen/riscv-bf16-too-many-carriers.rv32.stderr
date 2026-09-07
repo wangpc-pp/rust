@@ -1,0 +1,13 @@
+error: unknown LLVM intrinsic `llvm.riscv.vsub.nxv1bf16.nxv1bf16.i32`
+  --> $DIR/riscv-bf16-too-many-carriers.rs:42:5
+   |
+LL | /     fn too_many_carriers(
+LL | |
+LL | |         a0: u16,
+LL | |         a1: u16,
+...  |
+LL | |         a12: u16,
+LL | |     );
+   | |______^
+
+error: aborting due to 1 previous error

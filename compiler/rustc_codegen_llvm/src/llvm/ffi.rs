@@ -1145,6 +1145,22 @@ unsafe extern "C" {
         NewFn: &mut Option<&'a Value>,
     ) -> bool;
     pub(crate) fn LLVMRustIsTargetIntrinsic(ID: NonZero<c_uint>) -> bool;
+    pub(crate) fn LLVMRustGetIntrinsicDeclaration<'a>(
+        Mod: &'a Module,
+        ID: NonZero<c_uint>,
+        RetTy: &'a Type,
+        ArgTys: *const &'a Type,
+        ArgCount: size_t,
+    ) -> Option<&'a Value>;
+    pub(crate) fn LLVMRustIntrinsicSignatureMatchesName(
+        Mod: &Module,
+        ID: NonZero<c_uint>,
+        Name: *const c_char,
+        NameLen: size_t,
+        RetTy: &Type,
+        ArgTys: *const &Type,
+        ArgCount: size_t,
+    ) -> bool;
 
     // Operations on parameters
     pub(crate) fn LLVMIsAArgument(Val: &Value) -> Option<&Value>;

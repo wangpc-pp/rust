@@ -357,6 +357,43 @@ impl Intrinsic {
             LLVMGetIntrinsicDeclaration(llmod, self.id, type_params.as_ptr(), type_params.len())
         }
     }
+
+    pub(crate) fn get_declaration_for_signature<'ll>(
+        self,
+        llmod: &'ll Module,
+        return_ty: &'ll Type,
+        argument_tys: &[&'ll Type],
+    ) -> Option<&'ll Value> {
+        unsafe {
+            LLVMRustGetIntrinsicDeclaration(
+                llmod,
+                self.id,
+                return_ty,
+                argument_tys.as_ptr(),
+                argument_tys.len(),
+            )
+        }
+    }
+
+    pub(crate) fn signature_matches_name(
+        self,
+        llmod: &Module,
+        name: &str,
+        return_ty: &Type,
+        argument_tys: &[&Type],
+    ) -> bool {
+        unsafe {
+            LLVMRustIntrinsicSignatureMatchesName(
+                llmod,
+                self.id,
+                name.as_c_char_ptr(),
+                name.len(),
+                return_ty,
+                argument_tys.as_ptr(),
+                argument_tys.len(),
+            )
+        }
+    }
 }
 
 /// Safe wrapper for `LLVMSetValueName2` from a byte slice

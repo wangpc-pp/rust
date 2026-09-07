@@ -1756,6 +1756,34 @@ extern "C" bool LLVMRustIsTargetIntrinsic(unsigned ID) {
   return Intrinsic::isTargetIntrinsic(ID);
 }
 
+extern "C" LLVMValueRef LLVMRustGetIntrinsicDeclaration(
+    LLVMModuleRef Mod, unsigned ID, LLVMTypeRef RetTy, LLVMTypeRef *ArgTys,
+    size_t ArgCount) {
+  SmallVector<Type *, 4> OverloadTys;
+  auto *FnTy = FunctionType::get(unwrap(RetTy),
+                                 ArrayRef<Type *>(unwrap(ArgTys), ArgCount),
+                                 /*isVarArg=*/false);
+  auto IID = static_cast<Intrinsic::ID>(ID);
+  if (!Intrinsic::isSignatureValid(IID, FnTy, OverloadTys))
+    return nullptr;
+  return wrap(Intrinsic::getOrInsertDeclaration(unwrap(Mod), IID, OverloadTys));
+}
+
+extern "C" bool LLVMRustIntrinsicSignatureMatchesName(
+    LLVMModuleRef Mod, unsigned ID, const char *Name, size_t NameLen,
+    LLVMTypeRef RetTy, LLVMTypeRef *ArgTys, size_t ArgCount) {
+  SmallVector<Type *, 4> OverloadTys;
+  auto *FnTy = FunctionType::get(unwrap(RetTy),
+                                 ArrayRef<Type *>(unwrap(ArgTys), ArgCount),
+                                 /*isVarArg=*/false);
+  auto IID = static_cast<Intrinsic::ID>(ID);
+  if (!Intrinsic::isSignatureValid(IID, FnTy, OverloadTys))
+    return false;
+  std::string CanonicalName =
+      Intrinsic::getName(IID, OverloadTys, unwrap(Mod), FnTy);
+  return StringRef(CanonicalName) == StringRef(Name, NameLen);
+}
+
 extern "C" LLVMValueRef LLVMRustConstPtrAuth(LLVMValueRef Ptr, uint32_t Key,
                                              uint64_t Disc,
                                              LLVMValueRef AddrDiversity,
