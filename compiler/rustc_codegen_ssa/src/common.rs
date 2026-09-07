@@ -88,6 +88,7 @@ pub enum TypeKind {
     ScalableVector,
     BFloat,
     X86_AMX,
+    TargetExt,
 }
 
 // FIXME(mw): Anything that is produced via DepGraph::with_task() must implement

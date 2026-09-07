@@ -388,6 +388,7 @@ pub(crate) enum TypeKind {
     ScalableVector = 17,
     BFloat = 18,
     X86_AMX = 19,
+    TargetExt = 20,
 }
 
 /// LLVMAtomicRmwBinOp
@@ -967,7 +968,6 @@ unsafe extern "C" {
     pub(crate) safe fn LLVMPointerTypeInContext(C: &Context, AddressSpace: c_uint) -> &Type;
     pub(crate) fn LLVMVectorType(ElementType: &Type, ElementCount: c_uint) -> &Type;
     pub(crate) fn LLVMScalableVectorType(ElementType: &Type, ElementCount: c_uint) -> &Type;
-
     pub(crate) fn LLVMGetElementType(Ty: &Type) -> &Type;
     pub(crate) fn LLVMGetVectorSize(VectorTy: &Type) -> c_uint;
 

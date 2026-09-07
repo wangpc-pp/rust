@@ -148,6 +148,7 @@ impl ToGeneric<TypeKind> for llvm::TypeKind {
             Self::ScalableVector => TypeKind::ScalableVector,
             Self::BFloat => TypeKind::BFloat,
             Self::X86_AMX => TypeKind::X86_AMX,
+            Self::TargetExt => TypeKind::TargetExt,
         }
     }
 }
