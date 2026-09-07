@@ -1,0 +1,19 @@
+error[E0617]: can't pass scalable vector type `vint32m1_t` to variadic function
+  --> $DIR/riscv-c-variadic.rs:29:26
+   |
+LL |     unsafe { variadic(0, vector) };
+   |                          ^^^^^^
+   |
+   = note: scalable vectors and scalable vector tuples have no supported C variadic ABI
+
+error[E0617]: can't pass scalable vector type `vint32m1x2_t` to variadic function
+  --> $DIR/riscv-c-variadic.rs:34:26
+   |
+LL |     unsafe { variadic(0, tuple) };
+   |                          ^^^^^
+   |
+   = note: scalable vectors and scalable vector tuples have no supported C variadic ABI
+
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0617`.

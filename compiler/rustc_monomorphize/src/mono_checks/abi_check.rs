@@ -1,12 +1,14 @@
 //! This module ensures that if a function's ABI requires a particular target feature,
 //! that target feature is enabled both on the callee and all callers.
-use rustc_abi::{BackendRepr, CanonAbi, ExternAbi, RegKind, X86Call};
+use rustc_abi::{BackendRepr, CanonAbi, ExternAbi, RegKind, RiscvVectorAbi, X86Call};
+use rustc_hir::def::DefKind;
 use rustc_hir::{CRATE_HIR_ID, HirId};
 use rustc_middle::mir::{self, Location, traversal};
 use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt};
 use rustc_span::def_id::DefId;
 use rustc_span::{DUMMY_SP, Span, Symbol, sym};
 use rustc_target::callconv::{FnAbi, PassMode, TargetSpecificPassMode};
+use rustc_target::spec::Arch;
 
 use crate::diagnostics;
 
@@ -164,6 +166,32 @@ fn do_check_unsized_params<'tcx>(
     }
 }
 
+fn do_check_riscv_scalable_vector_abi<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    fn_abi: &FnAbi<'tcx, Ty<'tcx>>,
+    extern_abi: ExternAbi,
+    is_call: bool,
+    loc: impl Fn() -> (Span, HirId),
+) {
+    if !matches!(tcx.sess.target.arch, Arch::RiscV32 | Arch::RiscV64)
+        || extern_abi.is_rustic_abi()
+        || extern_abi == ExternAbi::LlvmIntrinsic
+    {
+        return;
+    }
+
+    for arg_abi in fn_abi.args.iter().chain(std::iter::once(&fn_abi.ret)) {
+        if arg_abi.layout.backend_repr.riscv_vector_abi() == RiscvVectorAbi::Unsupported {
+            let (span, _) = loc();
+            tcx.dcx().emit_err(diagnostics::AbiErrorUnsupportedRiscvVectorType {
+                span,
+                ty: arg_abi.layout.ty,
+                is_call,
+            });
+        }
+    }
+}
+
 /// Checks the ABI of an Instance, emitting an error when:
 ///
 /// - a non-rustic ABI uses unsized parameters
@@ -176,6 +204,15 @@ fn check_instance_abi<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) {
         // LLVM intrinsics
         return;
     }
+    let extern_abi = match instance.def {
+        InstanceKind::Item(def_id) | InstanceKind::Intrinsic(def_id)
+            if matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn) =>
+        {
+            tcx.fn_sig(def_id).instantiate(tcx, instance.args).skip_norm_wip().abi()
+        }
+        // Compiler-generated shims use an internal ABI.
+        _ => ExternAbi::Rust,
+    };
     let Ok(abi) = tcx.fn_abi_of_instance(typing_env.as_query_input((instance, ty::List::empty())))
     else {
         // An error will be reported during codegen if we cannot determine the ABI of this
@@ -193,6 +230,7 @@ fn check_instance_abi<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) {
         )
     };
     do_check_unsized_params(tcx, abi, /*is_call*/ false, loc);
+    do_check_riscv_scalable_vector_abi(tcx, abi, extern_abi, /*is_call*/ false, loc);
     do_check_simd_vector_abi(tcx, abi, instance.def_id(), /*is_call*/ false, loc);
 }
 
@@ -247,6 +285,7 @@ fn check_call_site_abi<'tcx>(
         return;
     };
     do_check_unsized_params(tcx, callee_abi, /*is_call*/ true, loc);
+    do_check_riscv_scalable_vector_abi(tcx, callee_abi, extern_abi, /*is_call*/ true, loc);
     do_check_simd_vector_abi(tcx, callee_abi, caller.def_id(), /*is_call*/ true, loc);
 }
 

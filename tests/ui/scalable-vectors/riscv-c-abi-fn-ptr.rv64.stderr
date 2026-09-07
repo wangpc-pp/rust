@@ -1,0 +1,9 @@
+error: this function call uses scalable vector type `Vbool8x2` which has no supported RISC-V C ABI
+  --> $DIR/riscv-c-abi-fn-ptr.rs:28:5
+   |
+LL |     function(x);
+   |     ^^^^^^^^^^^ function called here
+   |
+   = help: use a legal RVV data vector, mask vector, or homogeneous data-vector tuple
+
+error: aborting due to 1 previous error

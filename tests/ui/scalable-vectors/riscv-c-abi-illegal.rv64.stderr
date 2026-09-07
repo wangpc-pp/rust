@@ -1,0 +1,49 @@
+error: scalable vector type `Vint8m8x2` has no supported RISC-V C ABI
+  --> $DIR/riscv-c-abi-illegal.rs:69:34
+   |
+LL | pub extern "C" fn define_m8x2(x: Vint8m8x2) {}
+   |                                  ^^^^^^^^^
+
+error: scalable vector type `Vint8m4x3` has no supported RISC-V C ABI
+  --> $DIR/riscv-c-abi-illegal.rs:72:43
+   |
+LL | pub extern "C-unwind" fn define_m4x3() -> Vint8m4x3 {
+   |                                           ^^^^^^^^^
+
+error: scalable vector type `Vint8m2x5` has no supported RISC-V C ABI
+  --> $DIR/riscv-c-abi-illegal.rs:77:34
+   |
+LL | pub extern "C" fn define_m2x5(x: Vint8m2x5) {}
+   |                                  ^^^^^^^^^
+
+error: scalable vector type `Vbool8x2` has no supported RISC-V C ABI
+  --> $DIR/riscv-c-abi-illegal.rs:53:35
+   |
+LL |     safe fn declare_mask_tuple(x: Vbool8x2);
+   |                                   ^^^^^^^^
+
+error: scalable vector type `Vint32BadLanes` has no supported RISC-V C ABI
+  --> $DIR/riscv-c-abi-illegal.rs:56:36
+   |
+LL |     safe fn declare_bad_lanes() -> Vint32BadLanes;
+   |                                    ^^^^^^^^^^^^^^
+
+error: scalable vector type `Vint128` has no supported RISC-V C ABI
+  --> $DIR/riscv-c-abi-illegal.rs:59:29
+   |
+LL |     safe fn declare_i128(x: Vint128);
+   |                             ^^^^^^^
+
+error: scalable vector type `Vuint128` has no supported RISC-V C ABI
+  --> $DIR/riscv-c-abi-illegal.rs:62:29
+   |
+LL |     safe fn declare_u128(x: Vuint128);
+   |                             ^^^^^^^^
+
+error: scalable vector type `Vfloat128` has no supported RISC-V C ABI
+  --> $DIR/riscv-c-abi-illegal.rs:65:29
+   |
+LL |     safe fn declare_f128(x: Vfloat128);
+   |                             ^^^^^^^^^
+
+error: aborting due to 8 previous errors

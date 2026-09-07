@@ -2,7 +2,7 @@ use std::iter;
 use std::ops::ControlFlow;
 
 use bitflags::bitflags;
-use rustc_abi::VariantIdx;
+use rustc_abi::{ExternAbi, RiscvVectorAbi, VariantIdx};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_errors::{DiagMessage, msg};
 use rustc_hir::def::CtorKind;
@@ -16,7 +16,7 @@ use rustc_middle::ty::{
 };
 use rustc_span::def_id::LocalDefId;
 use rustc_span::{Span, sym};
-use rustc_target::spec::Os;
+use rustc_target::spec::{Arch, Os};
 use tracing::debug;
 
 use super::repr_nullable_ptr;
@@ -477,6 +477,7 @@ struct ImproperCTypesVisitor<'a, 'tcx> {
     /// to any other types it contains.
     base_ty: Ty<'tcx>,
     base_fn_mode: CItemKind,
+    abi: ExternAbi,
 }
 
 impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
@@ -484,6 +485,7 @@ impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
         cx: &'a LateContext<'tcx>,
         base_ty: Unnormalized<'tcx, Ty<'tcx>>,
         base_fn_mode: CItemKind,
+        abi: ExternAbi,
     ) -> Self {
         // Skip normalization for opaques: even in `TypingMode::Borrowck` the body's own
         // defining opaques still get revealed, leaving entries in `OpaqueTypeStorage` that
@@ -493,7 +495,7 @@ impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
         } else {
             maybe_normalize_erasing_regions(cx, base_ty)
         };
-        ImproperCTypesVisitor { cx, base_ty, base_fn_mode, cache: FxHashSet::default() }
+        ImproperCTypesVisitor { cx, base_ty, base_fn_mode, abi, cache: FxHashSet::default() }
     }
 
     /// Checks if the given indirection (box,ref,pointer) is "ffi-safe".
@@ -752,6 +754,32 @@ impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
 
         match *ty.kind() {
             ty::Adt(def, args) => {
+                if state.is_in_function()
+                    && self.abi != ExternAbi::LlvmIntrinsic
+                    && def.repr().scalable()
+                    && matches!(tcx.sess.target.arch, Arch::RiscV32 | Arch::RiscV64)
+                {
+                    let Ok(layout) = tcx.layout_of(self.cx.typing_env().as_query_input(ty)) else {
+                        return FfiSafe;
+                    };
+                    return match layout.backend_repr.riscv_vector_abi() {
+                        RiscvVectorAbi::DataVector
+                        | RiscvVectorAbi::MaskVector
+                        | RiscvVectorAbi::DataTuple => FfiSafe,
+                        RiscvVectorAbi::Unsupported => FfiUnsafe {
+                            ty,
+                            reason: msg!(
+                                "this scalable vector shape is not supported by the RISC-V C ABI"
+                            ),
+                            help: Some(msg!(
+                                "use a legal RVV data vector or homogeneous data-vector tuple"
+                            )),
+                        },
+                        RiscvVectorAbi::NotScalable => {
+                            bug!("scalable vector type had a non-scalable layout: {ty}")
+                        }
+                    };
+                }
                 if let Some(inner_ty) = ty.boxed_ty() {
                     return self.visit_indirection(state, ty, inner_ty, IndirectionKind::Box);
                 }
@@ -1051,8 +1079,9 @@ impl<'tcx> ImproperCTypesLint {
             iter::zip(visitor.tys.drain(..), visitor.spans.drain(..)),
         );
         for (depth, (fn_ptr_ty, span)) in all_types {
+            let abi = fn_ptr_ty.fn_sig(cx.tcx).abi();
             let fn_ptr_ty = Unnormalized::new_wip(fn_ptr_ty);
-            let mut visitor = ImproperCTypesVisitor::new(cx, fn_ptr_ty, fn_mode);
+            let mut visitor = ImproperCTypesVisitor::new(cx, fn_ptr_ty, fn_mode, abi);
             let bridge_state = VisitorState { depth, ..state };
             // FIXME(ctypes): make a check_for_fnptr
             let ffi_res = visitor.check_type(bridge_state, fn_ptr_ty);
@@ -1103,7 +1132,12 @@ impl<'tcx> ImproperCTypesLint {
 
     fn check_foreign_static(&mut self, cx: &LateContext<'tcx>, id: hir::OwnerId, span: Span) {
         let ty = cx.tcx.type_of(id).instantiate_identity();
-        let mut visitor = ImproperCTypesVisitor::new(cx, ty, CItemKind::Declaration);
+        let mut visitor = ImproperCTypesVisitor::new(
+            cx,
+            ty,
+            CItemKind::Declaration,
+            ExternAbi::C { unwind: false },
+        );
         let ffi_res = visitor.check_type(VisitorState::static_entry_point(), ty);
         self.process_ffi_result(cx, span, ffi_res, CItemKind::Declaration);
     }
@@ -1122,7 +1156,7 @@ impl<'tcx> ImproperCTypesLint {
         for (input_ty, input_hir) in iter::zip(sig.inputs(), decl.inputs) {
             let input_ty = Unnormalized::new_wip(*input_ty);
             let state = VisitorState::fn_entry_point(fn_mode, FnPos::Arg);
-            let mut visitor = ImproperCTypesVisitor::new(cx, input_ty, fn_mode);
+            let mut visitor = ImproperCTypesVisitor::new(cx, input_ty, fn_mode, sig.abi());
             let ffi_res = visitor.check_type(state, input_ty);
             self.process_ffi_result(cx, input_hir.span, ffi_res, fn_mode);
         }
@@ -1130,7 +1164,7 @@ impl<'tcx> ImproperCTypesLint {
         if let hir::FnRetTy::Return(ret_hir) = decl.output {
             let output_ty = Unnormalized::new_wip(sig.output());
             let state = VisitorState::fn_entry_point(fn_mode, FnPos::Ret);
-            let mut visitor = ImproperCTypesVisitor::new(cx, output_ty, fn_mode);
+            let mut visitor = ImproperCTypesVisitor::new(cx, output_ty, fn_mode, sig.abi());
             let ffi_res = visitor.check_type(state, output_ty);
             self.process_ffi_result(cx, ret_hir.span, ffi_res, fn_mode);
         }

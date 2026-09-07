@@ -181,6 +181,28 @@ pub(crate) struct AbiErrorUnsupportedVectorType<'a> {
 }
 
 #[derive(Diagnostic)]
+#[diag(
+    "this function {$is_call ->
+        [true] call
+        *[false] definition
+    } uses scalable vector type `{$ty}` which has no supported RISC-V C ABI"
+)]
+#[help("use a legal RVV data vector, mask vector, or homogeneous data-vector tuple")]
+pub(crate) struct AbiErrorUnsupportedRiscvVectorType<'a> {
+    #[primary_span]
+    #[label(
+        "function {$is_call ->
+            [true] called
+            *[false] defined
+        } here"
+    )]
+    pub span: Span,
+    pub ty: Ty<'a>,
+    /// Whether this is a problem at a call site or at a declaration.
+    pub is_call: bool,
+}
+
+#[derive(Diagnostic)]
 #[diag("this function {$is_call ->
     [true] call
     *[false] definition

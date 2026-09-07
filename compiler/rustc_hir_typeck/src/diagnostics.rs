@@ -1098,6 +1098,15 @@ pub(crate) struct PassToVariadicFunction<'a, 'tcx> {
 }
 
 #[derive(Diagnostic)]
+#[diag("can't pass scalable vector type `{$ty}` to variadic function", code = E0617)]
+#[note("scalable vectors and scalable vector tuples have no supported C variadic ABI")]
+pub(crate) struct PassScalableVectorToVariadicFunction<'tcx> {
+    #[primary_span]
+    pub span: Span,
+    pub ty: Ty<'tcx>,
+}
+
+#[derive(Diagnostic)]
 #[diag("can't pass a function item to a variadic function", code = E0617)]
 #[help(
     "a function item is zero-sized and needs to be cast into a function pointer to be used in FFI"

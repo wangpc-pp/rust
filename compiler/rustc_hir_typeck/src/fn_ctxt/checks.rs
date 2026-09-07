@@ -521,6 +521,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 //
                 // cfg(bootstrap): change the if let to an unwrap.
                 let arg_ty = self.structurally_resolve_type(arg.span, arg_ty);
+                if arg_ty.is_scalable_vector() {
+                    tcx.sess.dcx().emit_err(diagnostics::PassScalableVectorToVariadicFunction {
+                        span: arg.span,
+                        ty: arg_ty,
+                    });
+                    continue;
+                }
                 if let Some(trait_def_id) = tcx.lang_items().va_arg_safe()
                     && self
                         .type_implements_trait(trait_def_id, [arg_ty], self.param_env)

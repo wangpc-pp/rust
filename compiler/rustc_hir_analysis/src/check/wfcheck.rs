@@ -2,7 +2,7 @@ use std::cell::LazyCell;
 use std::ops::{ControlFlow, Deref};
 
 use hir::intravisit::{self, Visitor};
-use rustc_abi::{ExternAbi, ScalableElt};
+use rustc_abi::{ExternAbi, RiscvVectorAbi, ScalableElt};
 use rustc_ast as ast;
 use rustc_data_structures::fx::{FxHashSet, FxIndexMap, FxIndexSet};
 use rustc_data_structures::transitive_relation::TransitiveRelationBuilder;
@@ -31,6 +31,7 @@ use rustc_middle::ty::{
 use rustc_middle::{bug, span_bug};
 use rustc_session::diagnostics::feature_err;
 use rustc_span::{DUMMY_SP, Span, sym};
+use rustc_target::spec::Arch;
 use rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 use rustc_trait_selection::regions::{
     OutlivesEnvironmentBuildExt, region_known_to_outlive, ty_known_to_outlive,
@@ -1140,8 +1141,44 @@ fn check_item_fn(
 
         let sig = tcx.fn_sig(def_id).instantiate_identity().skip_norm_wip();
         check_fn_or_method(wfcx, sig, decl, def_id);
-        Ok(())
+        check_riscv_c_abi_scalable_vectors(tcx, sig, decl, def_id)
     })
+}
+
+fn check_riscv_c_abi_scalable_vectors<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    sig: ty::PolyFnSig<'tcx>,
+    hir_decl: &hir::FnDecl<'_>,
+    def_id: LocalDefId,
+) -> Result<(), ErrorGuaranteed> {
+    if !matches!(tcx.sess.target.arch, Arch::RiscV32 | Arch::RiscV64)
+        || sig.skip_binder().abi().is_rustic_abi()
+        // LLVM intrinsics deliberately accept LLVM-native scalable-vector shapes.
+        || sig.skip_binder().abi() == ExternAbi::LlvmIntrinsic
+    {
+        return Ok(());
+    }
+
+    let sig = tcx.liberate_late_bound_regions(def_id.to_def_id(), sig);
+    let typing_env = ty::TypingEnv::non_body_analysis(tcx, def_id);
+    let span = |idx| {
+        hir_decl.inputs.get(idx).map_or(hir_decl.output.span(), |input: &hir::Ty<'_>| input.span)
+    };
+
+    let mut result = Ok(());
+    for (idx, ty) in sig.inputs_and_output.iter().enumerate() {
+        if !ty.is_scalable_vector() {
+            continue;
+        }
+        let Ok(layout) = tcx.layout_of(typing_env.as_query_input(ty)) else { continue };
+        if layout.backend_repr.riscv_vector_abi() == RiscvVectorAbi::Unsupported {
+            result = Err(tcx.dcx().span_err(
+                span(idx),
+                format!("scalable vector type `{ty}` has no supported RISC-V C ABI"),
+            ));
+        }
+    }
+    result
 }
 
 fn check_eiis_fn(tcx: TyCtxt<'_>, def_id: LocalDefId) {
