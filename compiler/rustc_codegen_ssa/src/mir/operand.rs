@@ -931,7 +931,8 @@ impl<'a, 'tcx, V: CodegenObject> OperandRefBuilder<'tcx, V> {
             OperandValueBuilder::Vector(v) => match v {
                 Either::Left(v) => OperandValue::Immediate(v),
                 Either::Right(())
-                    if let BackendRepr::SimdVector { element, .. } = layout.backend_repr
+                    if let BackendRepr::SimdVector { element, .. }
+                    | BackendRepr::SimdScalableVector { element, .. } = layout.backend_repr
                         && element.is_uninit_valid() =>
                 {
                     let bty = cx.immediate_backend_type(layout);
