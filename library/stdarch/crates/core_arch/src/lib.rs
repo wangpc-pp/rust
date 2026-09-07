@@ -76,6 +76,7 @@
         stdarch_arm_feature_detection,
         stdarch_mips_feature_detection,
         stdarch_powerpc_feature_detection,
+        stdarch_riscv_feature_detection,
     )
 )]
 
