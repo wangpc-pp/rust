@@ -710,6 +710,82 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                 self.pointercast(val, self.type_ptr())
             }
 
+            sym::riscv_vreinterpret => {
+                if !matches!(tcx.sess.target.arch, Arch::RiscV32 | Arch::RiscV64) {
+                    tcx.dcx().emit_fatal(IntrinsicWrongArch {
+                        name: name.as_str(),
+                        target_arch: tcx.sess.target.arch.desc(),
+                        span,
+                    });
+                }
+
+                let src_ty = fn_args.type_at(0);
+                let dst_ty = fn_args.type_at(1);
+                let (src_lanes, src_elem_ty, src_num_vecs) =
+                    src_ty.scalable_vector_parts(tcx).unwrap_or_else(|| {
+                        span_bug!(span, "`{name}` requires a scalable source vector")
+                    });
+                let (dst_lanes, dst_elem_ty, dst_num_vecs) =
+                    dst_ty.scalable_vector_parts(tcx).unwrap_or_else(|| {
+                        span_bug!(span, "`{name}` requires a scalable destination vector")
+                    });
+                assert_eq!(
+                    src_num_vecs,
+                    NumScalableVectors(1),
+                    "`{name}` does not accept scalable vector tuples"
+                );
+                assert_eq!(
+                    dst_num_vecs,
+                    NumScalableVectors(1),
+                    "`{name}` does not accept scalable vector tuples"
+                );
+
+                let src_is_mask = src_elem_ty == tcx.types.bool;
+                let dst_is_mask = dst_elem_ty == tcx.types.bool;
+                assert_ne!(
+                    src_is_mask, dst_is_mask,
+                    "`{name}` requires exactly one boolean vector type"
+                );
+
+                let (data_lanes, data_elem_ty, mask_lanes) = if src_is_mask {
+                    (dst_lanes, dst_elem_ty, src_lanes)
+                } else {
+                    (src_lanes, src_elem_ty, dst_lanes)
+                };
+                let data_elem_bits = match data_elem_ty.kind() {
+                    ty::Int(_) | ty::Uint(_) => data_elem_ty.primitive_size(tcx).bits(),
+                    _ => span_bug!(span, "`{name}` requires an integer RISC-V data vector"),
+                };
+                assert_eq!(
+                    u64::from(data_lanes) * data_elem_bits,
+                    64,
+                    "`{name}` requires an LMUL=1 RISC-V data vector"
+                );
+                assert!(
+                    matches!(mask_lanes, 1 | 2 | 4 | 8 | 16 | 32 | 64),
+                    "`{name}` requires a legal RISC-V mask vector"
+                );
+
+                let full_mask_ty = self.type_scalable_vector(self.type_i1(), 64);
+                if dst_is_mask {
+                    let full_mask = self.bitcast(args[0].immediate(), full_mask_ty);
+                    let dst_llvm_ty = result_layout.immediate_llvm_type(self.cx);
+                    self.call_intrinsic(
+                        "llvm.vector.extract",
+                        &[dst_llvm_ty, full_mask_ty],
+                        &[full_mask, self.const_i64(0)],
+                    )
+                } else {
+                    let src_llvm_ty = args[0].layout.immediate_llvm_type(self.cx);
+                    let full_mask = self.call_intrinsic(
+                        "llvm.vector.insert",
+                        &[full_mask_ty, src_llvm_ty],
+                        &[self.const_poison(full_mask_ty), args[0].immediate(), self.const_i64(0)],
+                    );
+                    self.bitcast(full_mask, result_layout.immediate_llvm_type(self.cx))
+                }
+            }
+
             sym::sve_tuple_create2 => {
                 assert_matches!(
                     self.layout_of(fn_args.type_at(0)).backend_repr,

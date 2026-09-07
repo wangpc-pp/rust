@@ -1721,6 +1721,7 @@ symbols! {
         riscv32,
         riscv64,
         riscv_target_feature,
+        riscv_vreinterpret,
         rlib,
         ropi,
         ropi_rwpi: "ropi-rwpi",

@@ -64,3 +64,11 @@ pub unsafe fn sve_tuple_get<SVecTup, SVec, const IDX: i32>(tuple: SVecTup) -> SV
 #[rustc_intrinsic]
 #[rustc_nounwind]
 pub unsafe fn sve_tuple_set<SVecTup, SVec, const IDX: i32>(tuple: SVecTup, x: SVec) -> SVecTup;
+
+/// Reinterpret an LMUL=1 RISC-V data vector as a mask vector, or vice versa.
+///
+/// One of `Src` and `Dst` must be an integer scalable vector occupying one full
+/// RISC-V vector register. The other must be a scalable boolean vector.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vreinterpret<Src, Dst>(src: Src) -> Dst;
