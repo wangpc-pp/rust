@@ -58,6 +58,9 @@ where
     match arg.mode {
         super::PassMode::Ignore | super::PassMode::Direct(_) => return,
         super::PassMode::Pair(_, _) => {}
+        super::PassMode::TargetSpecific(_) => {
+            unreachable!("nvptx64 kernels do not use target-specific PassMode")
+        }
         super::PassMode::Cast { .. } => unreachable!(),
         super::PassMode::Indirect { .. } => {}
     }

@@ -122,6 +122,9 @@ impl<'tcx> ArgAbiExt<'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
                 }
                 _ => unreachable!("{:?}", self.layout.backend_repr),
             },
+            PassMode::TargetSpecific(_) => {
+                bug!("target-specific PassMode is not implemented for rustc_codegen_cranelift")
+            }
             PassMode::Cast { ref cast, pad_i32_count } => {
                 assert_eq!(pad_i32_count, 0, "padding support not yet implemented");
                 cast_target_to_abi_params(cast).into_iter().map(|(_, param)| param).collect()
@@ -180,6 +183,9 @@ impl<'tcx> ArgAbiExt<'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
                 }
                 _ => unreachable!("{:?}", self.layout.backend_repr),
             },
+            PassMode::TargetSpecific(_) => {
+                bug!("target-specific PassMode is not implemented for rustc_codegen_cranelift")
+            }
             PassMode::Cast { ref cast, .. } => (
                 None,
                 cast_target_to_abi_params(cast).into_iter().map(|(_, param)| param).collect(),
@@ -263,6 +269,9 @@ pub(super) fn adjust_arg_for_abi<'tcx>(
             let (a, b) = arg.load_scalar_pair(fx);
             smallvec![a, b]
         }
+        PassMode::TargetSpecific(_) => {
+            bug!("target-specific PassMode is not implemented for rustc_codegen_cranelift")
+        }
         PassMode::Cast { ref cast, .. } => to_casted_value(fx, arg, cast),
         PassMode::Indirect { .. } => {
             if is_owned {
@@ -320,6 +329,9 @@ pub(super) fn cvalue_for_param<'tcx>(
         PassMode::Pair(_, _) => {
             assert_eq!(block_params.len(), 2, "{:?}", block_params);
             CValue::by_val_pair(block_params[0], block_params[1], arg_abi.layout)
+        }
+        PassMode::TargetSpecific(_) => {
+            bug!("target-specific PassMode is not implemented for rustc_codegen_cranelift")
         }
         PassMode::Cast { ref cast, .. } => {
             from_casted_value(fx, &block_params, arg_abi.layout, cast)

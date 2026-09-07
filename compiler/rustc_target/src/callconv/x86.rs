@@ -172,6 +172,7 @@ pub(crate) fn fill_inregs<'a, Ty, C>(
             }
             PassMode::Direct(ref mut attrs) => attrs,
             PassMode::Pair(..)
+            | PassMode::TargetSpecific(_)
             | PassMode::Indirect { attrs: _, meta_attrs: Some(_), on_stack: _ }
             | PassMode::Cast { .. } => {
                 unreachable!("x86 shouldn't be passing arguments by {:?}", arg.mode)

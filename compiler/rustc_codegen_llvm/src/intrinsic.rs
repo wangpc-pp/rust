@@ -1954,6 +1954,9 @@ fn get_args_from_tuple<'ll, 'tcx>(
                         result.push(field.val.llval);
                         tuple_index += 1;
                     }
+                    PassMode::TargetSpecific(_) => {
+                        bug!("target-specific PassMode is not supported for intrinsic arguments")
+                    }
                 }
             }
 

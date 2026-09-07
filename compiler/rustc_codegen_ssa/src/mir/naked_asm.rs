@@ -496,6 +496,9 @@ fn wasm_type<'tcx>(signature: &mut String, arg_abi: &ArgAbi<'_, Ty<'tcx>>, ptr_t
 
             signature.push_str(wrapped_wasm_type);
         }
+        PassMode::TargetSpecific(_) => {
+            unreachable!("naked asm wasm signature does not support target-specific PassMode")
+        }
         PassMode::Indirect { .. } => signature.push_str(ptr_type),
     }
 }

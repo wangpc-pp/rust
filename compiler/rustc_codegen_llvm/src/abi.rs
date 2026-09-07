@@ -240,6 +240,9 @@ impl<'ll, 'tcx> ArgAbiExt<'ll, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
     ) {
         match &self.mode {
             PassMode::Ignore => {}
+            PassMode::TargetSpecific(_) => {
+                bug!("target-specific argument ABI is not implemented")
+            }
             // Sized indirect arguments
             PassMode::Indirect { attrs, meta_attrs: None, on_stack: _ } => {
                 let align = attrs.pointee_align.unwrap_or(self.layout.align.abi);
@@ -299,6 +302,9 @@ impl<'ll, 'tcx> ArgAbiExt<'ll, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
         };
         match self.mode {
             PassMode::Ignore => {}
+            PassMode::TargetSpecific(_) => {
+                bug!("target-specific argument ABI is not implemented")
+            }
             PassMode::Pair(..) => {
                 OperandValue::Pair(next(), next()).store(bx, dst);
             }
@@ -367,6 +373,7 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
             PassMode::Ignore => cx.type_void(),
             PassMode::Direct(_) | PassMode::Pair(..) => self.ret.layout.immediate_llvm_type(cx),
             PassMode::Cast { cast, pad_i32_count: _ } => cast.llvm_type(cx),
+            PassMode::TargetSpecific(_) => bug!("target-specific return ABI is not implemented"),
             PassMode::Indirect { .. } => {
                 llargument_tys.push(cx.type_ptr());
                 cx.type_void()
@@ -392,6 +399,9 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     llargument_tys.push(arg.layout.scalar_pair_element_llvm_type(cx, 0, true));
                     llargument_tys.push(arg.layout.scalar_pair_element_llvm_type(cx, 1, true));
                     continue;
+                }
+                PassMode::TargetSpecific(_) => {
+                    bug!("target-specific argument ABI is not implemented")
                 }
                 PassMode::Indirect { attrs: _, meta_attrs: Some(_), on_stack: _ } => {
                     // Construct the type of a (wide) pointer to `ty`, and pass its two fields.
@@ -494,6 +504,7 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
                     apply_range_attr(llvm::AttributePlace::ReturnValue, scalar);
                 }
             }
+            PassMode::TargetSpecific(_) => bug!("target-specific return ABI is not implemented"),
             PassMode::Indirect { attrs, meta_attrs: _, on_stack } => {
                 assert!(!on_stack);
                 let i = apply(attrs);
@@ -521,6 +532,9 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
         for arg in self.args.iter() {
             match &arg.mode {
                 PassMode::Ignore => {}
+                PassMode::TargetSpecific(_) => {
+                    bug!("target-specific argument ABI is not implemented")
+                }
                 PassMode::Indirect { attrs, meta_attrs: None, on_stack: true } => {
                     let i = apply(attrs);
                     let byval = llvm::CreateByValAttr(
@@ -624,6 +638,7 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
             PassMode::Direct(attrs) => {
                 attrs.apply_attrs_to_callsite(llvm::AttributePlace::ReturnValue, bx.cx, callsite);
             }
+            PassMode::TargetSpecific(_) => bug!("target-specific return ABI is not implemented"),
             PassMode::Indirect { attrs, meta_attrs: _, on_stack } => {
                 assert!(!on_stack);
                 let i = apply(bx.cx, attrs);
@@ -645,6 +660,9 @@ impl<'ll, 'tcx> FnAbiLlvmExt<'ll, 'tcx> for FnAbi<'tcx, Ty<'tcx>> {
         for arg in self.args.iter() {
             match &arg.mode {
                 PassMode::Ignore => {}
+                PassMode::TargetSpecific(_) => {
+                    bug!("target-specific argument ABI is not implemented")
+                }
                 PassMode::Indirect { attrs, meta_attrs: None, on_stack: true } => {
                     let i = apply(bx.cx, attrs);
                     let byval = llvm::CreateByValAttr(

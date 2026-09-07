@@ -753,6 +753,9 @@ impl<'gcc, 'tcx> ArgAbiExt<'gcc, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
         if self.is_ignore() {
             return;
         }
+        if let PassMode::TargetSpecific(_) = self.mode {
+            bug!("target-specific PassMode is not implemented for rustc_codegen_gcc");
+        }
         if self.is_sized_indirect() {
             OperandValue::Ref(PlaceValue::new_sized(val, self.layout.align.abi)).store(bx, dst)
         } else if self.is_unsized_indirect() {
@@ -822,6 +825,9 @@ impl<'gcc, 'tcx> ArgAbiExt<'gcc, 'tcx> for ArgAbi<'tcx, Ty<'tcx>> {
             PassMode::Ignore => {}
             PassMode::Pair(..) => {
                 OperandValue::Pair(next(), next()).store(bx, dst);
+            }
+            PassMode::TargetSpecific(_) => {
+                bug!("target-specific PassMode is not implemented for rustc_codegen_gcc");
             }
             PassMode::Indirect { meta_attrs: Some(_), .. } => {
                 bug!("unsized `ArgAbi` cannot be stored");

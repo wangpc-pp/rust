@@ -157,6 +157,29 @@ pub trait ArgAbiBuilderMethods<'tcx>: BackendTypes {
         val: Self::Value,
         dst: PlaceRef<'tcx, Self::Value>,
     );
+    fn store_target_specific_fn_arg(
+        &mut self,
+        _arg_abi: &ArgAbi<'tcx, Ty<'tcx>>,
+        _idx: &mut usize,
+        _dst: PlaceRef<'tcx, Self::Value>,
+    ) {
+        bug!("target-specific fn arg ABI is not supported by this backend")
+    }
+    fn store_target_specific_arg(
+        &mut self,
+        _arg_abi: &ArgAbi<'tcx, Ty<'tcx>>,
+        _val: Self::Value,
+        _dst: PlaceRef<'tcx, Self::Value>,
+    ) {
+        bug!("target-specific argument ABI is not supported by this backend")
+    }
+    fn make_target_specific_arg(
+        &mut self,
+        _arg_abi: &ArgAbi<'tcx, Ty<'tcx>>,
+        _op: crate::mir::operand::OperandRef<'tcx, Self::Value>,
+    ) -> Vec<Self::Value> {
+        bug!("target-specific argument ABI is not supported by this backend")
+    }
 }
 
 pub trait TypeCodegenMethods<'tcx> = DerivedTypeCodegenMethods<'tcx>

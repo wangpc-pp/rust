@@ -498,6 +498,9 @@ fn fn_abi_sanity_check<'tcx>(
                 // `Cast` means "transmute to `CastType`"; that only makes sense for sized types.
                 assert!(arg.layout.is_sized());
             }
+            PassMode::TargetSpecific(_) => {
+                assert!(arg.layout.is_sized());
+            }
             PassMode::Indirect { meta_attrs: None, attrs, .. } => {
                 // No metadata, must be sized.
                 // Conceptually, unsized arguments must be copied around, which requires dynamically

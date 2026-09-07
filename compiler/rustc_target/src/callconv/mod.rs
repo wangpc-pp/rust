@@ -73,7 +73,13 @@ pub enum PassMode {
     ///
     /// `on_stack` cannot be true for unsized arguments, i.e., when `meta_attrs` is `Some`.
     Indirect { attrs: ArgAttributes, meta_attrs: Option<ArgAttributes>, on_stack: bool },
+    /// Pass the argument using a backend-specific ABI shape that cannot be expressed with the
+    /// generic `Direct`/`Pair`/`Cast` modes without leaking backend implementation details.
+    TargetSpecific(TargetSpecificPassMode),
 }
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug, StableHash)]
+pub enum TargetSpecificPassMode {}
 
 impl PassMode {
     /// Checks if these two `PassMode` are equal enough to be considered "the same for all
@@ -96,6 +102,7 @@ impl PassMode {
                 PassMode::Indirect { attrs: a1, meta_attrs: Some(e1), on_stack: s1 },
                 PassMode::Indirect { attrs: a2, meta_attrs: Some(e2), on_stack: s2 },
             ) => a1.eq_abi(a2) && e1.eq_abi(e2) && s1 == s2,
+            (PassMode::TargetSpecific(a), PassMode::TargetSpecific(b)) => a == b,
             _ => false,
         }
     }
@@ -432,7 +439,7 @@ impl<'a, Ty> ArgAbi<'a, Ty> {
     #[track_caller]
     pub fn make_indirect(&mut self) {
         match self.mode {
-            PassMode::Direct(_) | PassMode::Pair(_, _) => {
+            PassMode::Direct(_) | PassMode::Pair(_, _) | PassMode::TargetSpecific(_) => {
                 self.mode = Self::indirect_pass_mode(&self.layout);
             }
             PassMode::Indirect { attrs: _, meta_attrs: _, on_stack: false } => {
@@ -554,6 +561,10 @@ impl<'a, Ty> ArgAbi<'a, Ty> {
 
     pub fn is_ignore(&self) -> bool {
         matches!(self.mode, PassMode::Ignore)
+    }
+
+    pub fn is_target_specific(&self) -> bool {
+        matches!(self.mode, PassMode::TargetSpecific(_))
     }
 
     /// Checks if these two `ArgAbi` are equal enough to be considered "the same for all

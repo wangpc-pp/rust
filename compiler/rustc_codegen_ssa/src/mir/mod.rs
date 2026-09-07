@@ -600,6 +600,11 @@ fn arg_local_refs<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>>(
                     indirect_operand.store(bx, tmp);
                     LocalRef::UnsizedPlace(tmp)
                 }
+                PassMode::TargetSpecific(_) => {
+                    let tmp = PlaceRef::alloca(bx, arg.layout);
+                    bx.store_target_specific_fn_arg(arg, &mut llarg_idx, tmp);
+                    LocalRef::Place(tmp)
+                }
                 _ => {
                     let tmp = PlaceRef::alloca(bx, arg.layout);
                     bx.store_fn_arg(arg, &mut llarg_idx, tmp);

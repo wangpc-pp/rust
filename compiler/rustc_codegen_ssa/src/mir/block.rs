@@ -579,6 +579,15 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 return;
             }
 
+            PassMode::TargetSpecific(_) => {
+                let op = self.codegen_consume(bx, mir::Place::return_place().as_ref());
+                let mut vals = bx.make_target_specific_arg(&self.fn_abi.ret, op);
+                let [llval] = vals.as_mut_slice() else {
+                    bug!("target-specific return ABI must lower to exactly one backend value");
+                };
+                *llval
+            }
+
             PassMode::Direct(_) | PassMode::Pair(..) => {
                 let op = self.codegen_consume(bx, mir::Place::return_place().as_ref());
                 if let Ref(place_val) = op.val {
@@ -1936,6 +1945,10 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
     ) {
         match arg.mode {
             PassMode::Ignore => return,
+            PassMode::TargetSpecific(_) => {
+                llargs.extend(bx.make_target_specific_arg(arg, op));
+                return;
+            }
             PassMode::Cast { pad_i32_count, .. } => {
                 // Fill padding with undef value, where applicable.
                 let undef = bx.const_undef(bx.reg_backend_type(&Reg::i32()));
@@ -1983,7 +1996,9 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     (scratch.val.llval, scratch.val.align, true)
                 }
                 PassMode::Direct(_) => (op.immediate(), arg.layout.align.abi, false),
-                PassMode::Ignore | PassMode::Pair(..) => unreachable!("handled above"),
+                PassMode::Ignore | PassMode::Pair(..) | PassMode::TargetSpecific(_) => {
+                    unreachable!("handled above")
+                }
             },
             Ref(op_place_val) => match arg.mode {
                 PassMode::Indirect { attrs, on_stack, .. } => {
@@ -2457,7 +2472,11 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         match dest {
             Nothing => (),
             Store(dst) => {
-                bx.store_arg(ret_abi, llval, dst);
+                if ret_abi.is_target_specific() {
+                    bx.store_target_specific_arg(ret_abi, llval, dst);
+                } else {
+                    bx.store_arg(ret_abi, llval, dst);
+                }
                 if retags_enabled {
                     self.codegen_retag_place(bx, dst, false);
                 }
@@ -2473,7 +2492,14 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             }
             DirectOperand(index) => {
                 // If there is a cast, we have to store and reload.
-                let mut op = if let PassMode::Cast { .. } = ret_abi.mode {
+                let mut op = if ret_abi.is_target_specific() {
+                    let tmp = PlaceRef::alloca(bx, ret_abi.layout);
+                    tmp.storage_live(bx);
+                    bx.store_target_specific_arg(ret_abi, llval, tmp);
+                    let op = bx.load_operand(tmp);
+                    tmp.storage_dead(bx);
+                    op
+                } else if let PassMode::Cast { .. } = ret_abi.mode {
                     let tmp = PlaceRef::alloca(bx, ret_abi.layout);
                     tmp.storage_live(bx);
                     bx.store_arg(ret_abi, llval, tmp);

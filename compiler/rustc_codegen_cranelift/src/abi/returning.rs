@@ -13,7 +13,11 @@ pub(super) fn codegen_return_param<'tcx>(
     block_params_iter: &mut impl Iterator<Item = Value>,
 ) -> CPlace<'tcx> {
     let (ret_place, ret_param): (_, SmallVec<[_; 2]>) = match fx.fn_abi.ret.mode {
-        PassMode::Ignore | PassMode::Direct(_) | PassMode::Pair(_, _) | PassMode::Cast { .. } => {
+        PassMode::Ignore
+        | PassMode::Direct(_)
+        | PassMode::Pair(_, _)
+        | PassMode::Cast { .. }
+        | PassMode::TargetSpecific(_) => {
             let is_ssa = ssa_analyzed[RETURN_PLACE].is_ssa(fx, fx.fn_abi.ret.layout.ty);
             (super::make_local_place(fx, RETURN_PLACE, fx.fn_abi.ret.layout, is_ssa), smallvec![])
         }
@@ -64,7 +68,10 @@ pub(super) fn codegen_with_call_return_arg<'tcx>(
         PassMode::Indirect { attrs: _, meta_attrs: Some(_), on_stack: _ } => {
             unreachable!("unsized return value")
         }
-        PassMode::Direct(_) | PassMode::Pair(_, _) | PassMode::Cast { .. } => (None, None),
+        PassMode::Direct(_)
+        | PassMode::Pair(_, _)
+        | PassMode::Cast { .. }
+        | PassMode::TargetSpecific(_) => (None, None),
     };
 
     let results = f(fx, return_ptr);
@@ -80,6 +87,9 @@ pub(super) fn codegen_with_call_return_arg<'tcx>(
             let ret_val_b = results[1];
             ret_place
                 .write_cvalue(fx, CValue::by_val_pair(ret_val_a, ret_val_b, ret_arg_abi.layout));
+        }
+        PassMode::TargetSpecific(_) => {
+            bug!("target-specific PassMode is not implemented for rustc_codegen_cranelift")
         }
         PassMode::Cast { ref cast, .. } => {
             let result =
@@ -112,6 +122,9 @@ pub(crate) fn codegen_return(fx: &mut FunctionCx<'_, '_, '_>) {
             let place = fx.get_local_place(RETURN_PLACE);
             let ret_val = place.to_cvalue(fx).load_scalar(fx);
             fx.bcx.ins().return_(&[ret_val]);
+        }
+        PassMode::TargetSpecific(_) => {
+            bug!("target-specific PassMode is not implemented for rustc_codegen_cranelift")
         }
         PassMode::Pair(_, _) => {
             let place = fx.get_local_place(RETURN_PLACE);

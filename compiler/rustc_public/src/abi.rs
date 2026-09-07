@@ -56,6 +56,8 @@ pub enum PassMode {
     Pair(Opaque, Opaque),
     /// Pass the argument after casting it.
     Cast { pad_i32_count: u8, cast: Opaque },
+    /// Pass the argument using a backend-specific ABI shape.
+    TargetSpecific(Opaque),
     /// Pass the argument indirectly via a hidden pointer.
     Indirect { attrs: Opaque, meta_attrs: Opaque, on_stack: bool },
 }
