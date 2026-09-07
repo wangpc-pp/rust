@@ -285,6 +285,14 @@ pub(crate) fn to_llvm_features<'a>(sess: &Session, s: &'a str) -> Option<LLVMFea
         Arch::RiscV32 | Arch::RiscV64 => match s {
             // Filter out Rust-specific *virtual* target feature
             "zkne_or_zknd" => None,
+            // These extensions are experimental in LLVM and use prefixed feature names.
+            "zvabd" if major >= 23 => Some(LLVMFeature::new("experimental-zvabd")),
+            "zvdot4a8i" if major >= 23 => Some(LLVMFeature::new("experimental-zvdot4a8i")),
+            "zvfbfa" if major >= 22 => Some(LLVMFeature::new("experimental-zvfbfa")),
+            "zvfofp8min" if major >= 22 => Some(LLVMFeature::new("experimental-zvfofp8min")),
+            "zvzip" if major >= 23 => Some(LLVMFeature::new("experimental-zvzip")),
+            // Filter out features that are not supported by older external LLVM versions.
+            "zvabd" | "zvdot4a8i" | "zvfbfa" | "zvfofp8min" | "zvzip" => None,
             s => Some(LLVMFeature::new(s)),
         },
         Arch::Sparc | Arch::Sparc64 => match s {

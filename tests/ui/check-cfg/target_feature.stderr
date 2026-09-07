@@ -481,17 +481,21 @@ LL |     cfg!(target_feature = "_UNEXPECTED_VALUE");
 `zkt`
 `zreg`
 `ztso`
+`zvabd`
 `zvbb`
 `zvbc`
+`zvdot4a8i`
 `zve32f`
 `zve32x`
 `zve64d`
 `zve64f`
 `zve64x`
+`zvfbfa`
 `zvfbfmin`
 `zvfbfwma`
 `zvfh`
 `zvfhmin`
+`zvfofp8min`
 `zvkb`
 `zvkg`
 `zvkn`
@@ -516,7 +520,8 @@ LL |     cfg!(target_feature = "_UNEXPECTED_VALUE");
 `zvl4096b`
 `zvl512b`
 `zvl64b`
-`zvl65536b`, and `zvl8192b`
+`zvl65536b`
+`zvl8192b`, and `zvzip`
    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg.html> for more information about checking conditional configuration
    = note: `#[warn(unexpected_cfgs)]` on by default
 

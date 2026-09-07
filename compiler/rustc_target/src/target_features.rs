@@ -794,17 +794,21 @@ static RISCV_FEATURES: &[(&str, Stability, ImpliedFeatures)] = &[
     ("zksh", Stable, &[]),
     ("zkt", Stable, &[]),
     ("ztso", Stable, &[]),
+    ("zvabd", Unstable(sym::riscv_target_feature), &["zve32x"]),
     ("zvbb", Unstable(sym::riscv_target_feature), &["zvkb"]), // Zvbb ⊃ Zvkb
     ("zvbc", Unstable(sym::riscv_target_feature), &["zve64x"]),
+    ("zvdot4a8i", Unstable(sym::riscv_target_feature), &["zve32x"]),
     ("zve32f", Unstable(sym::riscv_target_feature), &["zve32x", "f"]),
     ("zve32x", Unstable(sym::riscv_target_feature), &["zvl32b", "zicsr"]),
     ("zve64d", Unstable(sym::riscv_target_feature), &["zve64f", "d"]),
     ("zve64f", Unstable(sym::riscv_target_feature), &["zve32f", "zve64x"]),
     ("zve64x", Unstable(sym::riscv_target_feature), &["zve32x", "zvl64b"]),
+    ("zvfbfa", Unstable(sym::riscv_target_feature), &["zve32f", "zfbfmin"]),
     ("zvfbfmin", Unstable(sym::riscv_target_feature), &["zve32f"]),
     ("zvfbfwma", Unstable(sym::riscv_target_feature), &["zfbfmin", "zvfbfmin"]),
     ("zvfh", Unstable(sym::riscv_target_feature), &["zvfhmin", "zve32f", "zfhmin"]), // Zvfh ⊃ Zvfhmin
     ("zvfhmin", Unstable(sym::riscv_target_feature), &["zve32f"]),
+    ("zvfofp8min", Unstable(sym::riscv_target_feature), &["zve32f"]),
     ("zvkb", Unstable(sym::riscv_target_feature), &["zve32x"]),
     ("zvkg", Unstable(sym::riscv_target_feature), &["zve32x"]),
     ("zvkn", Unstable(sym::riscv_target_feature), &["zvkned", "zvknhb", "zvkb", "zvkt"]),
@@ -831,6 +835,7 @@ static RISCV_FEATURES: &[(&str, Stability, ImpliedFeatures)] = &[
     ("zvl16384b", Unstable(sym::riscv_target_feature), &["zvl8192b"]),
     ("zvl32768b", Unstable(sym::riscv_target_feature), &["zvl16384b"]),
     ("zvl65536b", Unstable(sym::riscv_target_feature), &["zvl32768b"]),
+    ("zvzip", Unstable(sym::riscv_target_feature), &["zve32x"]),
     // tidy-alphabetical-end
 ];
 

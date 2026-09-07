@@ -1,8 +1,13 @@
 //@ add-minicore
-//@ revisions: aarch64 x86-64
+//@ revisions: aarch64 riscv64 x86-64
 //@ [aarch64] compile-flags: -Ctarget-feature=+neon,+fp16,+fhm --target=aarch64-unknown-linux-gnu
 //@ [aarch64] needs-llvm-components: aarch64
 //@ [aarch64] ignore-backends: gcc
+//@ [riscv64] compile-flags: -Ctarget-feature=+zvabd,+zvdot4a8i,+zvfbfa
+//@ [riscv64] compile-flags: -Ctarget-feature=+zvfofp8min,+zvzip -Awarnings
+//@ [riscv64] compile-flags: --target=riscv64gc-unknown-linux-gnu
+//@ [riscv64] needs-llvm-components: riscv
+//@ [riscv64] ignore-backends: gcc
 //@ [x86-64] compile-flags: -Ctarget-feature=+sse4.2,+rdrand --target=x86_64-unknown-linux-gnu
 //@ [x86-64] needs-llvm-components: x86
 //@ build-pass
@@ -54,6 +59,27 @@ fn check_aarch64() {
     assert!(cfg!(target_feature = "fp16"));
     #[expect(unexpected_cfgs)]
     { assert!(cfg!(not(target_feature = "fullfp16"))); }
+}
+
+#[cfg(target_arch = "riscv64")]
+fn check_riscv64() {
+    // These checks that the Rust feature names are used, not the LLVM feature names.
+    assert!(cfg!(target_feature = "zvabd"));
+    assert!(cfg!(target_feature = "zvdot4a8i"));
+    assert!(cfg!(target_feature = "zvfbfa"));
+    assert!(cfg!(target_feature = "zvfofp8min"));
+    assert!(cfg!(target_feature = "zvzip"));
+
+    #[expect(unexpected_cfgs)]
+    { assert!(cfg!(not(target_feature = "experimental-zvabd"))); }
+    #[expect(unexpected_cfgs)]
+    { assert!(cfg!(not(target_feature = "experimental-zvdot4a8i"))); }
+    #[expect(unexpected_cfgs)]
+    { assert!(cfg!(not(target_feature = "experimental-zvfbfa"))); }
+    #[expect(unexpected_cfgs)]
+    { assert!(cfg!(not(target_feature = "experimental-zvfofp8min"))); }
+    #[expect(unexpected_cfgs)]
+    { assert!(cfg!(not(target_feature = "experimental-zvzip"))); }
 }
 
 #[cfg(target_arch = "x86_64")]
