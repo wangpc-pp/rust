@@ -1,3 +1,5 @@
+// ignore-tidy-filelength
+
 use std::cmp::Ordering;
 use std::ffi::c_uint;
 use std::{assert_matches, iter, ptr};
@@ -49,6 +51,92 @@ use crate::intrinsic::ty::typetree::fnc_typetrees;
 use crate::llvm::{self, Attribute, AttributePlace, Type, Value};
 use crate::type_of::LayoutLlvmExt;
 use crate::va_arg::emit_va_arg;
+
+fn riscv_segment_parts<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    name: Symbol,
+    span: Span,
+    tuple_ty: Ty<'tcx>,
+    elem_ty: Ty<'tcx>,
+) -> (u16, u8, u64) {
+    let (field_min_lanes, tuple_elem_ty, tuple_num_vecs) = tuple_ty
+        .scalable_vector_parts(tcx)
+        .unwrap_or_else(|| span_bug!(span, "`{name}` requires a scalable vector tuple"));
+    let NumScalableVectors(tuple_nf @ 2..=8) = tuple_num_vecs else {
+        span_bug!(span, "`{name}` requires a scalable vector tuple with 2 to 8 fields");
+    };
+    assert_eq!(tuple_elem_ty, elem_ty, "`{name}` element type mismatch");
+
+    let field_scalar_bits = match elem_ty.kind() {
+        ty::Int(_) | ty::Uint(_) | ty::Float(_) => elem_ty.primitive_size(tcx).bits(),
+        _ => span_bug!(span, "`{name}` requires an integer or floating-point element"),
+    };
+    assert!(
+        matches!(field_scalar_bits, 8 | 16 | 32 | 64),
+        "`{name}` requires an 8-, 16-, 32-, or 64-bit element"
+    );
+    let field_min_bits = u64::from(field_min_lanes) * field_scalar_bits;
+    assert!(
+        matches!(field_min_bits, 8 | 16 | 32 | 64 | 128 | 256 | 512),
+        "`{name}` requires a legal RISC-V vector LMUL"
+    );
+    assert!(
+        field_min_bits * u64::from(tuple_nf) <= 512,
+        "`{name}` tuple register group exceeds LMUL 8"
+    );
+
+    (field_min_lanes, tuple_nf, field_scalar_bits)
+}
+
+fn pack_riscv_segment_tuple<'ll, 'tcx>(
+    bx: &mut Builder<'_, 'll, 'tcx>,
+    arg: &OperandRef<'tcx, &'ll Value>,
+    field_min_lanes: u16,
+    field_scalar_bits: u64,
+    tuple_nf: u8,
+) -> (&'ll Value, &'ll Type, &'ll Type, &'ll Type) {
+    let rust_tuple_ty = arg.layout.immediate_llvm_type(bx.cx);
+    let field_tys = bx.struct_element_types(rust_tuple_ty);
+    assert_eq!(field_tys.len(), usize::from(tuple_nf));
+    let field_ty = field_tys[0];
+    assert!(field_tys.iter().all(|&ty| ty == field_ty));
+    let target_tuple_ty = bx.type_riscv_vector_tuple(
+        u64::from(field_min_lanes),
+        field_scalar_bits,
+        u32::from(tuple_nf),
+    );
+
+    let mut target_tuple = bx.const_poison(target_tuple_ty);
+    for idx in 0..u64::from(tuple_nf) {
+        let field = bx.extract_value(arg.immediate(), idx);
+        target_tuple = bx.call_intrinsic(
+            "llvm.riscv.tuple.insert",
+            &[target_tuple_ty, field_ty],
+            &[target_tuple, field, bx.const_i32(idx as i32)],
+        );
+    }
+    (target_tuple, rust_tuple_ty, target_tuple_ty, field_ty)
+}
+
+fn unpack_riscv_segment_tuple<'ll, 'tcx>(
+    bx: &mut Builder<'_, 'll, 'tcx>,
+    target_tuple: &'ll Value,
+    rust_tuple_ty: &'ll Type,
+    target_tuple_ty: &'ll Type,
+    field_ty: &'ll Type,
+    tuple_nf: u8,
+) -> &'ll Value {
+    let mut rust_tuple = bx.const_poison(rust_tuple_ty);
+    for idx in 0..u64::from(tuple_nf) {
+        let field = bx.call_intrinsic(
+            "llvm.riscv.tuple.extract",
+            &[field_ty, target_tuple_ty],
+            &[target_tuple, bx.const_i32(idx as i32)],
+        );
+        rust_tuple = bx.insert_value(rust_tuple, field, idx);
+    }
+    rust_tuple
+}
 
 fn call_simple_intrinsic<'ll, 'tcx>(
     bx: &mut Builder<'_, 'll, 'tcx>,
@@ -784,6 +872,304 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                     );
                     self.bitcast(full_mask, result_layout.immediate_llvm_type(self.cx))
                 }
+            }
+
+            sym::riscv_vlseg
+            | sym::riscv_vlseg_mask
+            | sym::riscv_vlsseg
+            | sym::riscv_vlsseg_mask
+            | sym::riscv_vloxseg
+            | sym::riscv_vloxseg_mask
+            | sym::riscv_vluxseg
+            | sym::riscv_vluxseg_mask
+            | sym::riscv_vsseg
+            | sym::riscv_vsseg_mask
+            | sym::riscv_vssseg
+            | sym::riscv_vssseg_mask
+            | sym::riscv_vsoxseg
+            | sym::riscv_vsoxseg_mask
+            | sym::riscv_vsuxseg
+            | sym::riscv_vsuxseg_mask => {
+                if !matches!(tcx.sess.target.arch, Arch::RiscV32 | Arch::RiscV64) {
+                    tcx.dcx().emit_fatal(IntrinsicWrongArch {
+                        name: name.as_str(),
+                        target_arch: tcx.sess.target.arch.desc(),
+                        span,
+                    });
+                }
+
+                let is_store = matches!(
+                    name,
+                    sym::riscv_vsseg
+                        | sym::riscv_vsseg_mask
+                        | sym::riscv_vssseg
+                        | sym::riscv_vssseg_mask
+                        | sym::riscv_vsoxseg
+                        | sym::riscv_vsoxseg_mask
+                        | sym::riscv_vsuxseg
+                        | sym::riscv_vsuxseg_mask
+                );
+                let is_strided = matches!(
+                    name,
+                    sym::riscv_vlsseg
+                        | sym::riscv_vlsseg_mask
+                        | sym::riscv_vssseg
+                        | sym::riscv_vssseg_mask
+                );
+                let is_indexed = matches!(
+                    name,
+                    sym::riscv_vloxseg
+                        | sym::riscv_vloxseg_mask
+                        | sym::riscv_vluxseg
+                        | sym::riscv_vluxseg_mask
+                        | sym::riscv_vsoxseg
+                        | sym::riscv_vsoxseg_mask
+                        | sym::riscv_vsuxseg
+                        | sym::riscv_vsuxseg_mask
+                );
+                let is_masked = matches!(
+                    name,
+                    sym::riscv_vlseg_mask
+                        | sym::riscv_vlsseg_mask
+                        | sym::riscv_vloxseg_mask
+                        | sym::riscv_vluxseg_mask
+                        | sym::riscv_vsseg_mask
+                        | sym::riscv_vssseg_mask
+                        | sym::riscv_vsoxseg_mask
+                        | sym::riscv_vsuxseg_mask
+                );
+                let family = match name {
+                    sym::riscv_vlseg | sym::riscv_vlseg_mask => "vlseg",
+                    sym::riscv_vlsseg | sym::riscv_vlsseg_mask => "vlsseg",
+                    sym::riscv_vloxseg | sym::riscv_vloxseg_mask => "vloxseg",
+                    sym::riscv_vluxseg | sym::riscv_vluxseg_mask => "vluxseg",
+                    sym::riscv_vsseg | sym::riscv_vsseg_mask => "vsseg",
+                    sym::riscv_vssseg | sym::riscv_vssseg_mask => "vssseg",
+                    sym::riscv_vsoxseg | sym::riscv_vsoxseg_mask => "vsoxseg",
+                    sym::riscv_vsuxseg | sym::riscv_vsuxseg_mask => "vsuxseg",
+                    _ => unreachable!(),
+                };
+
+                let tuple_ty = fn_args.type_at(0);
+                let elem_ty = fn_args.type_at(1);
+                let (field_min_lanes, tuple_nf, field_scalar_bits) =
+                    riscv_segment_parts(tcx, name, span, tuple_ty, elem_ty);
+                let expected_mutability =
+                    if is_store { hir::Mutability::Mut } else { hir::Mutability::Not };
+                assert!(
+                    matches!(
+                        args[1].layout.ty.kind(),
+                        ty::RawPtr(pointee, mutability)
+                            if *pointee == elem_ty && *mutability == expected_mutability
+                    ),
+                    "`{name}` pointer element type or mutability mismatch"
+                );
+
+                let nf = u64::from(tuple_nf);
+                let sew_log2 = u64::from(field_scalar_bits.trailing_zeros());
+
+                let index_arg = is_indexed.then_some(2);
+                let mask_arg = is_masked.then_some(if is_indexed || is_strided { 3 } else { 2 });
+                let vl_arg = if is_masked {
+                    if is_indexed || is_strided { 4 } else { 3 }
+                } else if is_indexed || is_strided {
+                    3
+                } else {
+                    2
+                };
+
+                let index_llvm_ty = index_arg.map(|index_arg| {
+                    let index_ty = fn_args.type_at(2);
+                    let (index_min_lanes, index_elem_ty, index_num_vecs) =
+                        index_ty.scalable_vector_parts(tcx).unwrap_or_else(|| {
+                            span_bug!(span, "`{name}` requires a scalable index vector")
+                        });
+                    assert_eq!(
+                        index_num_vecs,
+                        NumScalableVectors(1),
+                        "`{name}` index must be a single scalable vector"
+                    );
+                    assert_eq!(index_min_lanes, field_min_lanes, "`{name}` index lane mismatch");
+                    let index_scalar_bits = match index_elem_ty.kind() {
+                        ty::Int(_) | ty::Uint(_) => index_elem_ty.primitive_size(tcx).bits(),
+                        _ => span_bug!(span, "`{name}` requires an integer index element"),
+                    };
+                    assert!(
+                        matches!(index_scalar_bits, 8 | 16 | 32 | 64),
+                        "`{name}` requires an 8-, 16-, 32-, or 64-bit index element"
+                    );
+                    assert!(
+                        !(tcx.sess.target.arch == Arch::RiscV32 && index_scalar_bits == 64),
+                        "`{name}` does not support 64-bit index elements on RISC-V 32"
+                    );
+                    assert!(
+                        matches!(
+                            u64::from(index_min_lanes) * index_scalar_bits,
+                            8 | 16 | 32 | 64 | 128 | 256 | 512
+                        ),
+                        "`{name}` index EMUL must be in the range mf8..=m8"
+                    );
+                    args[index_arg].layout.immediate_llvm_type(self.cx)
+                });
+
+                let mask_llvm_ty = mask_arg.map(|mask_arg| {
+                    let mask_ty = fn_args.type_at(if is_indexed { 3 } else { 2 });
+                    let (mask_min_lanes, mask_elem_ty, mask_num_vecs) =
+                        mask_ty.scalable_vector_parts(tcx).unwrap_or_else(|| {
+                            span_bug!(span, "`{name}` requires a scalable mask type")
+                        });
+                    assert_eq!(mask_min_lanes, field_min_lanes, "`{name}` mask lane mismatch");
+                    assert_eq!(mask_elem_ty, tcx.types.bool, "`{name}` mask must contain bool");
+                    assert_eq!(mask_num_vecs, NumScalableVectors(1));
+                    args[mask_arg].layout.immediate_llvm_type(self.cx)
+                });
+
+                let (target_tuple, rust_tuple_llvm_ty, target_tuple_ty, field_llvm_ty) =
+                    pack_riscv_segment_tuple(
+                        self,
+                        &args[0],
+                        field_min_lanes,
+                        field_scalar_bits,
+                        tuple_nf,
+                    );
+
+                let llvm_xlen_ty = self.type_isize();
+                let llvm_ptr_ty = self.type_ptr();
+                let mut overload_tys = vec![target_tuple_ty, llvm_ptr_ty];
+                if is_strided {
+                    overload_tys.push(llvm_xlen_ty);
+                } else if let Some(index_llvm_ty) = index_llvm_ty {
+                    overload_tys.push(index_llvm_ty);
+                }
+                if let Some(mask_llvm_ty) = mask_llvm_ty {
+                    overload_tys.push(mask_llvm_ty);
+                }
+                if !is_strided {
+                    overload_tys.push(llvm_xlen_ty);
+                }
+
+                let mut operands = vec![target_tuple, args[1].immediate()];
+                if is_strided || is_indexed {
+                    operands.push(args[2].immediate());
+                }
+                if let Some(mask_arg) = mask_arg {
+                    operands.push(args[mask_arg].immediate());
+                }
+                operands.push(args[vl_arg].immediate());
+                if is_masked && !is_store {
+                    let const_idx = if is_indexed { 4 } else { 3 };
+                    let policy = fn_args.const_at(const_idx).to_leaf().to_target_usize(tcx);
+                    assert!(policy <= 3, "`{name}` policy must be in the range 0..=3");
+                    operands.push(self.const_usize(policy));
+                }
+                operands.push(self.const_usize(sew_log2));
+
+                let llvm_name = if is_masked {
+                    format!("llvm.riscv.{family}{nf}.mask")
+                } else {
+                    format!("llvm.riscv.{family}{nf}")
+                };
+                let call = self.call_intrinsic(llvm_name, &overload_tys, &operands);
+
+                if is_store {
+                    return IntrinsicResult::Operand(OperandValue::ZeroSized);
+                }
+
+                unpack_riscv_segment_tuple(
+                    self,
+                    call,
+                    rust_tuple_llvm_ty,
+                    target_tuple_ty,
+                    field_llvm_ty,
+                    tuple_nf,
+                )
+            }
+
+            sym::riscv_vlsegff | sym::riscv_vlsegff_mask => {
+                if !matches!(tcx.sess.target.arch, Arch::RiscV32 | Arch::RiscV64) {
+                    tcx.dcx().emit_fatal(IntrinsicWrongArch {
+                        name: name.as_str(),
+                        target_arch: tcx.sess.target.arch.desc(),
+                        span,
+                    });
+                }
+
+                let tuple_ty = fn_args.type_at(0);
+                let elem_ty = fn_args.type_at(1);
+                let (field_min_lanes, tuple_nf, field_scalar_bits) =
+                    riscv_segment_parts(tcx, name, span, tuple_ty, elem_ty);
+                assert!(
+                    matches!(
+                        args[1].layout.ty.kind(),
+                        ty::RawPtr(pointee, hir::Mutability::Not) if *pointee == elem_ty
+                    ),
+                    "`{name}` pointer element type mismatch"
+                );
+
+                let is_masked = name == sym::riscv_vlsegff_mask;
+                let nf = u64::from(tuple_nf);
+                let sew_log2 = u64::from(field_scalar_bits.trailing_zeros());
+
+                if is_masked {
+                    let mask_ty = fn_args.type_at(2);
+                    let (mask_min_lanes, mask_elem_ty, mask_num_vecs) =
+                        mask_ty.scalable_vector_parts(tcx).unwrap_or_else(|| {
+                            span_bug!(span, "`{name}` requires a scalable mask type")
+                        });
+                    assert_eq!(mask_min_lanes, field_min_lanes, "`{name}` mask lane mismatch");
+                    assert_eq!(mask_elem_ty, tcx.types.bool, "`{name}` mask must contain bool");
+                    assert_eq!(mask_num_vecs, NumScalableVectors(1));
+                }
+
+                let (target_passthru, rust_tuple_llvm_ty, target_tuple_ty, field_llvm_ty) =
+                    pack_riscv_segment_tuple(
+                        self,
+                        &args[0],
+                        field_min_lanes,
+                        field_scalar_bits,
+                        tuple_nf,
+                    );
+
+                let llvm_xlen_ty = self.type_isize();
+                let llvm_ptr_ty = self.type_ptr();
+                let sew_log2 = self.const_usize(sew_log2);
+                let call = if is_masked {
+                    let llvm_mask_ty = args[2].layout.immediate_llvm_type(self.cx);
+                    let policy = fn_args.const_at(3).to_leaf().to_target_usize(tcx);
+                    assert!(policy <= 3, "`{name}` policy must be in the range 0..=3");
+                    self.call_intrinsic(
+                        format!("llvm.riscv.vlseg{nf}ff.mask"),
+                        &[target_tuple_ty, llvm_xlen_ty, llvm_ptr_ty, llvm_mask_ty],
+                        &[
+                            target_passthru,
+                            args[1].immediate(),
+                            args[2].immediate(),
+                            args[4].immediate(),
+                            self.const_usize(policy),
+                            sew_log2,
+                        ],
+                    )
+                } else {
+                    self.call_intrinsic(
+                        format!("llvm.riscv.vlseg{nf}ff"),
+                        &[target_tuple_ty, llvm_xlen_ty, llvm_ptr_ty],
+                        &[target_passthru, args[1].immediate(), args[3].immediate(), sew_log2],
+                    )
+                };
+
+                let target_loaded = self.extract_value(call, 0);
+                let new_vl = self.extract_value(call, 1);
+                let new_vl_ptr = args[if is_masked { 3 } else { 2 }].immediate();
+                self.store(new_vl, new_vl_ptr, self.align_of(tcx.types.usize));
+
+                unpack_riscv_segment_tuple(
+                    self,
+                    target_loaded,
+                    rust_tuple_llvm_ty,
+                    target_tuple_ty,
+                    field_llvm_ty,
+                    tuple_nf,
+                )
             }
 
             sym::sve_tuple_create2 => {

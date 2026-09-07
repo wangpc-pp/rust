@@ -767,7 +767,7 @@ pub(crate) fn check_intrinsic_type(
         sym::sve_tuple_get => (2, 1, vec![param(0)], param(1)),
         sym::sve_tuple_set => (2, 1, vec![param(0), param(1)], param(0)),
         sym::riscv_vreinterpret => (2, 0, vec![param(0)], param(1)),
-        sym::riscv_vleff => (
+        sym::riscv_vleff | sym::riscv_vlsegff => (
             2,
             0,
             vec![
@@ -778,7 +778,7 @@ pub(crate) fn check_intrinsic_type(
             ],
             param(0),
         ),
-        sym::riscv_vleff_mask => (
+        sym::riscv_vleff_mask | sym::riscv_vlsegff_mask => (
             3,
             1,
             vec![
@@ -789,6 +789,84 @@ pub(crate) fn check_intrinsic_type(
                 tcx.types.usize,
             ],
             param(0),
+        ),
+        sym::riscv_vlseg => {
+            (2, 0, vec![param(0), Ty::new_imm_ptr(tcx, param(1)), tcx.types.usize], param(0))
+        }
+        sym::riscv_vlseg_mask => (
+            3,
+            1,
+            vec![param(0), Ty::new_imm_ptr(tcx, param(1)), param(2), tcx.types.usize],
+            param(0),
+        ),
+        sym::riscv_vlsseg => (
+            2,
+            0,
+            vec![param(0), Ty::new_imm_ptr(tcx, param(1)), tcx.types.isize, tcx.types.usize],
+            param(0),
+        ),
+        sym::riscv_vlsseg_mask => (
+            3,
+            1,
+            vec![
+                param(0),
+                Ty::new_imm_ptr(tcx, param(1)),
+                tcx.types.isize,
+                param(2),
+                tcx.types.usize,
+            ],
+            param(0),
+        ),
+        sym::riscv_vloxseg | sym::riscv_vluxseg => (
+            3,
+            0,
+            vec![param(0), Ty::new_imm_ptr(tcx, param(1)), param(2), tcx.types.usize],
+            param(0),
+        ),
+        sym::riscv_vloxseg_mask | sym::riscv_vluxseg_mask => (
+            4,
+            1,
+            vec![param(0), Ty::new_imm_ptr(tcx, param(1)), param(2), param(3), tcx.types.usize],
+            param(0),
+        ),
+        sym::riscv_vsseg => {
+            (2, 0, vec![param(0), Ty::new_mut_ptr(tcx, param(1)), tcx.types.usize], tcx.types.unit)
+        }
+        sym::riscv_vsseg_mask => (
+            3,
+            0,
+            vec![param(0), Ty::new_mut_ptr(tcx, param(1)), param(2), tcx.types.usize],
+            tcx.types.unit,
+        ),
+        sym::riscv_vssseg => (
+            2,
+            0,
+            vec![param(0), Ty::new_mut_ptr(tcx, param(1)), tcx.types.isize, tcx.types.usize],
+            tcx.types.unit,
+        ),
+        sym::riscv_vssseg_mask => (
+            3,
+            0,
+            vec![
+                param(0),
+                Ty::new_mut_ptr(tcx, param(1)),
+                tcx.types.isize,
+                param(2),
+                tcx.types.usize,
+            ],
+            tcx.types.unit,
+        ),
+        sym::riscv_vsoxseg | sym::riscv_vsuxseg => (
+            3,
+            0,
+            vec![param(0), Ty::new_mut_ptr(tcx, param(1)), param(2), tcx.types.usize],
+            tcx.types.unit,
+        ),
+        sym::riscv_vsoxseg_mask | sym::riscv_vsuxseg_mask => (
+            4,
+            0,
+            vec![param(0), Ty::new_mut_ptr(tcx, param(1)), param(2), param(3), tcx.types.usize],
+            tcx.types.unit,
         ),
 
         sym::atomic_cxchg | sym::atomic_cxchgweak => (

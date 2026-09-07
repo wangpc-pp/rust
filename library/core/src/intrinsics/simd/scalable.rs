@@ -100,3 +100,185 @@ pub unsafe fn riscv_vleff_mask<SVec, Elem, Mask, const POLICY: usize>(
     new_vl: *mut usize,
     vl: usize,
 ) -> SVec;
+
+/// Perform a RISC-V unit-stride fault-only-first segment load.
+///
+/// `SVecTup` must be a tuple of two to eight scalable vectors whose element type is `Elem`. The
+/// number of elements successfully loaded is written to `new_vl`.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vlsegff<SVecTup, Elem>(
+    passthru: SVecTup,
+    ptr: *const Elem,
+    new_vl: *mut usize,
+    vl: usize,
+) -> SVecTup;
+
+/// Perform a masked RISC-V unit-stride fault-only-first segment load.
+///
+/// `SVecTup` must be a tuple of two to eight scalable vectors whose element type is `Elem`.
+/// `Mask` must be a scalable boolean vector with the same number of lanes as each tuple
+/// field. The number of elements successfully loaded is written to `new_vl`.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vlsegff_mask<SVecTup, Elem, Mask, const POLICY: usize>(
+    passthru: SVecTup,
+    ptr: *const Elem,
+    mask: Mask,
+    new_vl: *mut usize,
+    vl: usize,
+) -> SVecTup;
+
+/// Perform a RISC-V unit-stride segment load.
+///
+/// `SVecTup` must be a tuple of two to eight scalable vectors whose element type is `Elem`.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vlseg<SVecTup, Elem>(passthru: SVecTup, ptr: *const Elem, vl: usize)
+-> SVecTup;
+
+/// Perform a masked RISC-V unit-stride segment load.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vlseg_mask<SVecTup, Elem, Mask, const POLICY: usize>(
+    passthru: SVecTup,
+    ptr: *const Elem,
+    mask: Mask,
+    vl: usize,
+) -> SVecTup;
+
+/// Perform a RISC-V strided segment load.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vlsseg<SVecTup, Elem>(
+    passthru: SVecTup,
+    ptr: *const Elem,
+    stride: isize,
+    vl: usize,
+) -> SVecTup;
+
+/// Perform a masked RISC-V strided segment load.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vlsseg_mask<SVecTup, Elem, Mask, const POLICY: usize>(
+    passthru: SVecTup,
+    ptr: *const Elem,
+    stride: isize,
+    mask: Mask,
+    vl: usize,
+) -> SVecTup;
+
+/// Perform a RISC-V ordered indexed segment load.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vloxseg<SVecTup, Elem, Index>(
+    passthru: SVecTup,
+    ptr: *const Elem,
+    index: Index,
+    vl: usize,
+) -> SVecTup;
+
+/// Perform a masked RISC-V ordered indexed segment load.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vloxseg_mask<SVecTup, Elem, Index, Mask, const POLICY: usize>(
+    passthru: SVecTup,
+    ptr: *const Elem,
+    index: Index,
+    mask: Mask,
+    vl: usize,
+) -> SVecTup;
+
+/// Perform a RISC-V unordered indexed segment load.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vluxseg<SVecTup, Elem, Index>(
+    passthru: SVecTup,
+    ptr: *const Elem,
+    index: Index,
+    vl: usize,
+) -> SVecTup;
+
+/// Perform a masked RISC-V unordered indexed segment load.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vluxseg_mask<SVecTup, Elem, Index, Mask, const POLICY: usize>(
+    passthru: SVecTup,
+    ptr: *const Elem,
+    index: Index,
+    mask: Mask,
+    vl: usize,
+) -> SVecTup;
+
+/// Perform a RISC-V unit-stride segment store.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vsseg<SVecTup, Elem>(value: SVecTup, ptr: *mut Elem, vl: usize);
+
+/// Perform a masked RISC-V unit-stride segment store.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vsseg_mask<SVecTup, Elem, Mask>(
+    value: SVecTup,
+    ptr: *mut Elem,
+    mask: Mask,
+    vl: usize,
+);
+
+/// Perform a RISC-V strided segment store.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vssseg<SVecTup, Elem>(value: SVecTup, ptr: *mut Elem, stride: isize, vl: usize);
+
+/// Perform a masked RISC-V strided segment store.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vssseg_mask<SVecTup, Elem, Mask>(
+    value: SVecTup,
+    ptr: *mut Elem,
+    stride: isize,
+    mask: Mask,
+    vl: usize,
+);
+
+/// Perform a RISC-V ordered indexed segment store.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vsoxseg<SVecTup, Elem, Index>(
+    value: SVecTup,
+    ptr: *mut Elem,
+    index: Index,
+    vl: usize,
+);
+
+/// Perform a masked RISC-V ordered indexed segment store.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vsoxseg_mask<SVecTup, Elem, Index, Mask>(
+    value: SVecTup,
+    ptr: *mut Elem,
+    index: Index,
+    mask: Mask,
+    vl: usize,
+);
+
+/// Perform a RISC-V unordered indexed segment store.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vsuxseg<SVecTup, Elem, Index>(
+    value: SVecTup,
+    ptr: *mut Elem,
+    index: Index,
+    vl: usize,
+);
+
+/// Perform a masked RISC-V unordered indexed segment store.
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub unsafe fn riscv_vsuxseg_mask<SVecTup, Elem, Index, Mask>(
+    value: SVecTup,
+    ptr: *mut Elem,
+    index: Index,
+    mask: Mask,
+    vl: usize,
+);
