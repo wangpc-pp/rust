@@ -38,6 +38,8 @@ pub(crate) const DW_OP_LLVM_fragment: u64 = 0x1000;
 #[allow(non_upper_case_globals)]
 pub(crate) const DW_OP_constu: u64 = 0x10;
 #[allow(non_upper_case_globals)]
+pub(crate) const DW_OP_div: u64 = 0x1b;
+#[allow(non_upper_case_globals)]
 pub(crate) const DW_OP_minus: u64 = 0x1c;
 #[allow(non_upper_case_globals)]
 pub(crate) const DW_OP_mul: u64 = 0x1e;

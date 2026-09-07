@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::{assert_matches, iter, ptr};
+use std::{iter, ptr};
 
 use libc::{c_longlong, c_uint};
 use rustc_abi::{Align, Layout, NumScalableVectors, Size};
@@ -1162,11 +1162,8 @@ fn build_scalable_vector_di_node<'ll, 'tcx>(
     def_location: Option<DefinitionLocation<'ll>>,
     containing_scope: &'ll DIScope,
 ) -> DINodeCreationResult<'ll> {
-    use dwarf_const::{DW_OP_bregx, DW_OP_constu, DW_OP_minus, DW_OP_mul};
+    use dwarf_const::{DW_OP_bregx, DW_OP_constu, DW_OP_div, DW_OP_minus, DW_OP_mul};
     assert!(adt_def.repr().scalable());
-    // This logic is specific to AArch64 for the moment, but can be extended for other architectures
-    // later.
-    assert_matches!(cx.tcx.sess.target.arch, Arch::AArch64);
 
     let (file_metadata, line_number) = if let Some(def_location) = def_location {
         (def_location.0, def_location.1)
@@ -1174,22 +1171,84 @@ fn build_scalable_vector_di_node<'ll, 'tcx>(
         (unknown_file_metadata(cx), UNKNOWN_LINE_NUMBER)
     };
 
-    let (bitstride, element_di_node) = if element_ty.is_bool() {
-        (Some(llvm::LLVMValueAsMetadata(cx.const_i64(1))), type_di_node(cx, cx.tcx.types.u8))
-    } else {
-        (None, type_di_node(cx, element_ty))
+    let mut expr = smallvec::SmallVec::<[u64; 15]>::new();
+    let (bitstride, element_di_node) = match &cx.tcx.sess.target.arch {
+        Arch::AArch64 => {
+            let number_of_elements = (element_count as u64) * (number_of_vectors.0 as u64);
+            let number_of_elements_per_vg = number_of_elements / 2;
+            // `$number_of_elements_per_vg * value_of_register(AArch64::VG)`
+            expr.extend([
+                DW_OP_constu,
+                number_of_elements_per_vg,
+                DW_OP_bregx,
+                /* AArch64::VG */ 46,
+                0,
+                DW_OP_mul,
+            ]);
+
+            if element_ty.is_bool() {
+                (
+                    Some(llvm::LLVMValueAsMetadata(cx.const_i64(1))),
+                    type_di_node(cx, cx.tcx.types.u8),
+                )
+            } else {
+                (None, type_di_node(cx, element_ty))
+            }
+        }
+        Arch::RiscV32 | Arch::RiscV64 => {
+            if element_ty.is_bool() {
+                let number_of_elements = (element_count as u64) * (number_of_vectors.0 as u64);
+                // RVV masks have one bit per logical lane. LLVM defines vscale as VLEN / 64,
+                // while VLENB holds VLEN / 8, so `<vscale x N x i1>` contains
+                // `VLENB * N / 8` lanes. Multiply before dividing so N < 8 remains exact.
+                expr.extend([
+                    DW_OP_bregx,
+                    /* 4096 + CSR number for RISCV::VLENB */ 4096 + 0xC22,
+                    0,
+                    DW_OP_constu,
+                    number_of_elements,
+                    DW_OP_mul,
+                    DW_OP_constu,
+                    8,
+                    DW_OP_div,
+                ]);
+
+                (
+                    Some(llvm::LLVMValueAsMetadata(cx.const_i64(1))),
+                    type_di_node(cx, cx.tcx.types.u8),
+                )
+            } else {
+                let sew = element_ty.primitive_size(cx.tcx).bits();
+                let fixed_size = (element_count as u64) * sew;
+                let (fractional_lmul, lmul) = if fixed_size < 64 {
+                    (true, 64 / fixed_size)
+                } else {
+                    (false, fixed_size / 64)
+                };
+
+                // `(value_of_register(RISCV::VLENB) / (SEW / 8)) * LMUL * NFIELDS`
+                expr.extend([
+                    DW_OP_bregx,
+                    /* 4096 + CSR number for RISCV::VLENB */ 4096 + 0xC22,
+                    0,
+                    DW_OP_constu,
+                    sew / 8,
+                    DW_OP_div,
+                    DW_OP_constu,
+                    lmul,
+                    if fractional_lmul { DW_OP_div } else { DW_OP_mul },
+                ]);
+                if number_of_vectors.0 > 1 {
+                    expr.extend([DW_OP_constu, number_of_vectors.0 as u64, DW_OP_mul]);
+                }
+
+                (None, type_di_node(cx, element_ty))
+            }
+        }
+        arch => bug!("unsupported architecture for scalable vector debuginfo: {arch:?}"),
     };
 
-    let number_of_elements: u64 = (element_count as u64) * (number_of_vectors.0 as u64);
-    let number_of_elements_per_vg = number_of_elements / 2;
-    let mut expr = smallvec::SmallVec::<[u64; 9]>::new();
-    // `($number_of_elements_per_vector_granule * (value_of_register(AArch64::VG) + 0)) - 1`
-    expr.push(DW_OP_constu); // Push a constant onto the stack
-    expr.push(number_of_elements_per_vg);
-    expr.push(DW_OP_bregx); // Push the value of a register + offset on to the stack
-    expr.push(/* AArch64::VG */ 46u64);
-    expr.push(0u64);
-    expr.push(DW_OP_mul); // Multiply top two values on stack
+    // The subrange uses an inclusive upper bound, so subtract one from the element count.
     expr.push(DW_OP_constu); // Push a constant onto the stack
     expr.push(1u64);
     expr.push(DW_OP_minus); // Subtract top two values on stack

@@ -74,6 +74,7 @@ using namespace llvm::object;
 // verify that the hard-coded value in `dwarf_const.rs` still agrees with LLVM.
 static_assert(dwarf::DW_OP_LLVM_fragment == 0x1000);
 static_assert(dwarf::DW_OP_constu == 0x10);
+static_assert(dwarf::DW_OP_div == 0x1b);
 static_assert(dwarf::DW_OP_minus == 0x1c);
 static_assert(dwarf::DW_OP_mul == 0x1e);
 static_assert(dwarf::DW_OP_bregx == 0x92);
